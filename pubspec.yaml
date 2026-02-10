@@ -1,0 +1,46 @@
+name: trusty
+description: "Cross-platform GUI client for TrustTunnel VPN"
+publish_to: "none"
+version: 0.1.0+1
+homepage: https://github.com/Meddelin/trusty
+repository: https://github.com/Meddelin/trusty
+issue_tracker: https://github.com/Meddelin/trusty/issues
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI Components
+  cupertino_icons: ^1.0.8
+
+  # State Management
+  provider: ^6.1.2
+
+  # Local Storage
+  shared_preferences: ^2.3.3
+
+  # Path utilities
+  path: ^1.9.1
+
+  # System tray
+  tray_manager: ^0.2.3
+
+  # Window management
+  window_manager: ^0.4.2
+
+  # SSH client for remote server setup
+  dartssh2: ^2.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/

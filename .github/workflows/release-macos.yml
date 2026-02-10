@@ -1,0 +1,187 @@
+name: Build and Release macOS (Alpha)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+
+      - name: Verify Flutter installation
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build macOS release
+        run: flutter build macos --release
+
+      - name: Download TrustTunnel CLI
+        run: |
+          echo "Downloading latest TrustTunnel CLI for macOS..."
+
+          # Get latest release info
+          API_URL="https://api.github.com/repos/TrustTunnel/TrustTunnelClient/releases/latest"
+          RELEASE_JSON=$(curl -fsSL "$API_URL")
+
+          # Find macOS universal asset
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^"]*macos[^"]*universal[^"]*"' | head -1 | cut -d'"' -f4)
+
+          if [ -z "$DOWNLOAD_URL" ]; then
+            # Try alternative pattern
+            DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^"]*macos[^"]*"' | head -1 | cut -d'"' -f4)
+          fi
+
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "ERROR: Could not find macOS asset in latest release"
+            exit 1
+          fi
+
+          CLI_VERSION=$(echo "$RELEASE_JSON" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+          echo "Found CLI version: $CLI_VERSION"
+          echo "Downloading: $DOWNLOAD_URL"
+
+          # Download and extract
+          curl -fsSL "$DOWNLOAD_URL" -o cli_archive.tar.gz
+          mkdir -p cli_temp
+          tar -xzf cli_archive.tar.gz -C cli_temp
+
+          # Find the executable
+          CLI_BIN=$(find cli_temp -name "trusttunnel_client" -type f | head -1)
+          if [ -z "$CLI_BIN" ]; then
+            CLI_BIN=$(find cli_temp -name "trusttunnel" -type f | head -1)
+          fi
+
+          if [ -z "$CLI_BIN" ]; then
+            echo "ERROR: Could not find trusttunnel_client in downloaded archive"
+            echo "Archive contents:"
+            find cli_temp -type f
+            exit 1
+          fi
+
+          # Create client directory and copy
+          mkdir -p client
+          cp "$CLI_BIN" client/trusttunnel_client
+          chmod +x client/trusttunnel_client
+
+          echo "CLI downloaded successfully: $(wc -c < client/trusttunnel_client) bytes"
+          echo "$CLI_VERSION" > cli_version.txt
+
+      - name: Create release package
+        run: |
+          CLI_VERSION=$(cat cli_version.txt)
+          VERSION="${GITHUB_REF_NAME}"
+
+          mkdir -p release-package/client
+
+          # Copy the .app bundle
+          cp -R "build/macos/Build/Products/Release/trusty.app" release-package/ 2>/dev/null || \
+          cp -R build/macos/Build/Products/Release/*.app release-package/
+
+          # Copy client files
+          cp client/trusttunnel_client release-package/client/
+          if [ -f client/trusttunnel_client.toml.example ]; then
+            cp client/trusttunnel_client.toml.example release-package/client/
+          fi
+
+          # Copy docs
+          cp NOTICE release-package/ 2>/dev/null || true
+          cp LICENSE release-package/ 2>/dev/null || true
+
+          # Create README
+          cat > release-package/README.txt << EOF
+          # Trusty - macOS Client (Alpha)
+
+          ## What's Included
+
+          This release includes TrustTunnel CLI ($CLI_VERSION) pre-bundled.
+
+          ## Quick Start
+
+          1. Extract the ZIP file
+          2. Move the .app to /Applications (optional)
+          3. Place the client/ folder next to the .app
+          4. Right-click the .app → Open (first time, to bypass Gatekeeper)
+          5. Configure your server in Settings tab
+          6. Click Connect!
+
+          ## Alpha Notice
+
+          This is an alpha release for macOS. Some features may not work correctly.
+          Please report issues at the project repository.
+
+          ## Requirements
+
+          - macOS 11 Big Sur or later
+          - Administrator privileges may be required for VPN connection
+          - TrustTunnel server access
+
+          ## License
+
+          Apache-2.0 License
+          EOF
+
+          # Create ZIP
+          ARCHIVE_NAME="Trusty-macOS-${VERSION}.zip"
+          cd release-package
+          zip -r "../${ARCHIVE_NAME}" .
+          cd ..
+          echo "Created archive: ${ARCHIVE_NAME}"
+          ls -la "${ARCHIVE_NAME}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Trusty-macOS-*.zip
+          body: |
+            ## macOS Alpha Release
+
+            **This is an alpha release for macOS.** It has not been tested on real hardware.
+
+            ### Installation
+
+            1. Download and extract the ZIP
+            2. Place `client/` folder next to the `.app`
+            3. Right-click the `.app` → **Open** (bypasses Gatekeeper)
+            4. Configure server in Settings
+            5. Connect!
+
+            ### Known Limitations
+
+            - No code signing (Gatekeeper will block — use Right-click → Open)
+            - TUN creation may require sudo
+            - Split tunnel app detection is best-effort
+
+            ### Requirements
+
+            - macOS 11+ (Big Sur or later)
+            - TrustTunnel server access
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-${{ github.ref_name }}
+          path: |
+            Trusty-macOS-*.zip
+          retention-days: 30

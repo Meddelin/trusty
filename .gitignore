@@ -1,0 +1,130 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code
+.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android specific - signing keys
+*.jks
+*.keystore
+key.properties
+google-services.json
+
+# iOS specific - signing and provisioning
+*.mobileprovision
+*.p12
+*.cer
+GoogleService-Info.plist
+
+# Windows specific - generated files
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+windows/flutter/ephemeral/
+
+# Visual Studio build artifacts
+windows/.vs/
+windows/**/*.user
+windows/**/*.vcxproj.user
+windows/**/Debug/
+windows/**/Release/
+windows/**/x64/
+windows/**/*.ilk
+windows/**/*.pdb
+windows/**/*.obj
+windows/**/*.exp
+windows/**/*.lib
+
+# Build output and distribution
+TrustTunnelGUI/
+*.zip
+*.exe
+
+# Client executable (don't commit the binary, user should download)
+client/trusttunnel.exe
+client/trusttunnel_client.exe
+client/*.exe
+client/wintun.dll
+
+# Config files with passwords and credentials
+client/config.toml
+client/trusttunnel_client.toml
+*.toml
+!*.toml.example
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# User-specific files
+*.suo
+*.user
+*.userosensuite
+*.sln.docstates
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# OS files
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Internal documentation (keep only public docs)
+SUMMARY.md
+PROJECT_STRUCTURE.md
+QUICK_START.txt
+ФИНАЛЬНЫЙ_ОТЧЁТ.md
+ИЗМЕНЕНИЯ.md
+ВАЖНО_ИМЯ_ФАЙЛА.txt
+СБОРКА_В_ПРОЦЕССЕ.txt
+АЛЬТЕРНАТИВА.md
+КАК_НАСТРОИТЬ_КЛИЕНТ.txt
+ИСПРАВЛЕНО.txt
+UI_DESCRIPTION.md
+ГОТОВО.txt
+ИТОГОВЫЙ_СТАТУС.txt
+ПРОЕКТ_ГОТОВ.txt
+ФИНАЛЬНАЯ_ВЕРСИЯ_ГОТОВА.txt

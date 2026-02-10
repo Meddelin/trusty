@@ -1,0 +1,273 @@
+name: Build and Release Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+
+      - name: Verify Flutter installation
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Download TrustTunnel CLI
+        run: |
+          Write-Host "Downloading latest TrustTunnel CLI..."
+
+          # Get latest release info from TrustTunnelClient
+          $apiUrl = "https://api.github.com/repos/TrustTunnel/TrustTunnelClient/releases/latest"
+          $release = Invoke-RestMethod -Uri $apiUrl
+
+          # Find Windows x64 asset
+          $asset = $release.assets | Where-Object { $_.name -like "*windows*x86_64*" -or $_.name -like "*windows*amd64*" } | Select-Object -First 1
+
+          if (-not $asset) {
+            Write-Error "Could not find Windows x64 asset in latest release"
+            exit 1
+          }
+
+          Write-Host "Found CLI version: $($release.tag_name)"
+          Write-Host "Downloading: $($asset.name)"
+
+          # Download the asset
+          $downloadUrl = $asset.browser_download_url
+          $zipPath = "trusttunnel_cli.zip"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath
+
+          # Extract the ZIP
+          Expand-Archive -Path $zipPath -DestinationPath ".\cli_temp" -Force
+
+          # Find the executable (might be in subdirectory)
+          $exePath = Get-ChildItem -Path ".\cli_temp" -Filter "trusttunnel_client.exe" -Recurse | Select-Object -First 1
+
+          if (-not $exePath) {
+            # Try alternative name
+            $exePath = Get-ChildItem -Path ".\cli_temp" -Filter "trusttunnel.exe" -Recurse | Select-Object -First 1
+          }
+
+          if (-not $exePath) {
+            Write-Error "Could not find trusttunnel_client.exe in downloaded archive"
+            exit 1
+          }
+
+          # Create client directory and copy executable
+          New-Item -ItemType Directory -Force -Path ".\client"
+          Copy-Item -Path $exePath.FullName -Destination ".\client\trusttunnel_client.exe" -Force
+
+          Write-Host "CLI downloaded successfully: $(Get-Item '.\client\trusttunnel_client.exe' | Select-Object -ExpandProperty Length) bytes"
+
+          # Save version info for NOTICE file
+          $release.tag_name | Out-File -FilePath ".\cli_version.txt" -Encoding UTF8
+        shell: pwsh
+
+      - name: Download Wintun driver
+        run: |
+          Write-Host "Downloading Wintun driver..."
+
+          $wintunUrl = "https://www.wintun.net/builds/wintun-0.14.1.zip"
+          $wintunZip = "wintun.zip"
+          Invoke-WebRequest -Uri $wintunUrl -OutFile $wintunZip
+
+          # Extract the ZIP
+          Expand-Archive -Path $wintunZip -DestinationPath ".\wintun_temp" -Force
+
+          # Copy the amd64 DLL to client directory
+          $dllPath = Get-ChildItem -Path ".\wintun_temp" -Filter "wintun.dll" -Recurse | Where-Object { $_.DirectoryName -like "*amd64*" } | Select-Object -First 1
+
+          if (-not $dllPath) {
+            Write-Error "Could not find wintun.dll (amd64) in downloaded archive"
+            exit 1
+          }
+
+          Copy-Item -Path $dllPath.FullName -Destination ".\client\wintun.dll" -Force
+          Write-Host "Wintun DLL copied successfully: $(Get-Item '.\client\wintun.dll' | Select-Object -ExpandProperty Length) bytes"
+
+          # Cleanup
+          Remove-Item -Path $wintunZip -Force
+          Remove-Item -Path ".\wintun_temp" -Recurse -Force
+        shell: pwsh
+
+      - name: Update NOTICE file with CLI version
+        run: |
+          $cliVersion = Get-Content ".\cli_version.txt" -Raw
+          $cliVersion = $cliVersion.Trim()
+
+          $noticeContent = Get-Content ".\NOTICE" -Raw
+          $updatedNotice = $noticeContent -replace "TrustTunnel Client\r?\nCopyright", "TrustTunnel Client (Version $cliVersion)`nCopyright"
+
+          Set-Content -Path ".\NOTICE" -Value $updatedNotice -Encoding UTF8
+          Write-Host "Updated NOTICE file with CLI version: $cliVersion"
+        shell: pwsh
+
+      - name: Create client directory structure
+        run: |
+          New-Item -ItemType Directory -Force -Path .\release-package\client
+          Copy-Item .\client\trusttunnel_client.exe -Destination .\release-package\client\
+          Copy-Item .\client\wintun.dll -Destination .\release-package\client\
+          Copy-Item .\client\trusttunnel_client.toml.example -Destination .\release-package\client\
+        shell: pwsh
+
+      - name: Copy build artifacts
+        run: |
+          Copy-Item -Path .\build\windows\x64\runner\Release\* -Destination .\release-package\ -Recurse -Force
+          Copy-Item -Path .\NOTICE -Destination .\release-package\
+          Copy-Item -Path .\LICENSE -Destination .\release-package\
+        shell: pwsh
+
+      - name: Create README for release
+        run: |
+          $cliVersion = (Get-Content ".\cli_version.txt" -Raw).Trim()
+          @"
+          # Trusty - Windows Client
+
+          ## What's Included
+
+          ✅ This release includes TrustTunnel CLI ($cliVersion) pre-bundled!
+          No separate downloads needed - everything works out of the box.
+
+          ## Quick Start
+
+          1. Extract the ZIP file to your preferred location
+
+          2. Run Trusty.exe
+
+          3. Go to Settings tab and configure your server connection:
+             - Hostname: your-vpn-server.com
+             - IP Address: your server IP
+             - Port: 443 (or your server port)
+             - Username: your username
+             - Password: your password
+
+          4. Click Save Settings, then go to Home tab and click Connect
+
+          ## What's Inside
+
+          - Trusty.exe - Main GUI application
+          - client/trusttunnel_client.exe - VPN client CLI ($cliVersion)
+          - client/wintun.dll - Wintun network driver (required for TUN mode)
+          - client/trusttunnel_client.toml.example - Configuration example
+          - NOTICE - License attributions
+          - LICENSE - Apache-2.0 license
+
+          ## Configuration
+
+          See the full documentation:
+          - README.md in repository
+          - CONFIGURATION.md for advanced settings
+          - BUILDING.md for building from source
+
+          ## Requirements
+
+          - Windows 10 or Windows 11 (64-bit)
+          - Administrator privileges for VPN connection
+          - TrustTunnel server access
+
+          ## Support
+
+          For issues and questions:
+          https://github.com/Meddelin/trusty/issues
+
+          ## License
+
+          Apache-2.0 License
+          "@ | Out-File -FilePath .\release-package\README.txt -Encoding UTF8
+        shell: pwsh
+
+      - name: Create ZIP archive
+        run: |
+          $version = "${{ github.ref_name }}"
+          $archiveName = "Trusty-Windows-$version.zip"
+          Compress-Archive -Path .\release-package\* -DestinationPath $archiveName -Force
+          Write-Host "Created archive: $archiveName"
+          Get-ChildItem $archiveName | Select-Object Name, Length
+        shell: pwsh
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          $cliVersion = (Get-Content ".\cli_version.txt" -Raw).Trim()
+          $changelog = @"
+          ## What's Changed
+
+          This is an automated release of Trusty for Windows.
+
+          ### ✨ What's Included
+
+          ✅ **TrustTunnel CLI ($cliVersion) is now bundled!**
+          No separate downloads needed - everything works out of the box.
+
+          ### Installation
+
+          1. Download the ZIP file below
+          2. Extract to your preferred location
+          3. Run \`Trusty.exe\`
+          4. Configure your server in Settings tab
+          5. Click Connect!
+
+          ### Requirements
+
+          - Windows 10/11 (64-bit)
+          - Administrator privileges
+          - TrustTunnel server access
+
+          ### Documentation
+
+          - [README](https://github.com/Meddelin/trusty/blob/main/README.md)
+          - [Configuration Guide](https://github.com/Meddelin/trusty/blob/main/CONFIGURATION.md)
+          - [Building from Source](https://github.com/Meddelin/trusty/blob/main/BUILDING.md)
+
+          ### Related Projects
+
+          - [TrustTunnel Protocol](https://github.com/TrustTunnel/TrustTunnel)
+          "@
+
+          # Save to output
+          $changelog | Out-File -FilePath changelog.md -Encoding UTF8
+
+          # Set output for next step
+          echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+          Get-Content changelog.md | ForEach-Object { echo $_ >> $env:GITHUB_OUTPUT }
+          echo "EOF" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Trusty-Windows-*.zip
+          body_path: changelog.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-${{ github.ref_name }}
+          path: |
+            Trusty-Windows-*.zip
+          retention-days: 30
