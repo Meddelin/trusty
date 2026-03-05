@@ -6,6 +6,7 @@ on:
       - "v*"
     branches:
       - fix/macos-cli-auth
+  workflow_dispatch:
 
 permissions:
   contents: write
