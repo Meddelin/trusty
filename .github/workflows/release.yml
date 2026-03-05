@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - fix/macos-cli-auth
 
 permissions:
   contents: write
@@ -256,6 +258,7 @@ jobs:
         shell: pwsh
 
       - name: Create GitHub Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
