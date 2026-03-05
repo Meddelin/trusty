@@ -4,9 +4,14 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - fix/macos-cli-auth
 
 permissions:
   contents: write
+
+env:
+  CLI_VERSION: "v1.0.19"
 
 jobs:
   build-windows:
@@ -19,6 +24,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.38.9"
           channel: "stable"
 
       - name: Verify Flutter installation
@@ -36,8 +42,8 @@ jobs:
         run: |
           Write-Host "Downloading latest TrustTunnel CLI..."
 
-          # Get latest release info from TrustTunnelClient
-          $apiUrl = "https://api.github.com/repos/TrustTunnel/TrustTunnelClient/releases/latest"
+          # Get pinned CLI release from TrustTunnelClient
+          $apiUrl = "https://api.github.com/repos/TrustTunnel/TrustTunnelClient/releases/tags/$env:CLI_VERSION"
           $release = Invoke-RestMethod -Uri $apiUrl
 
           # Find Windows x64 asset
@@ -197,7 +203,7 @@ jobs:
 
       - name: Create ZIP archive
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = "${{ github.ref_name }}" -replace '/', '-'
           $archiveName = "Trusty-Windows-$version.zip"
           Compress-Archive -Path .\release-package\* -DestinationPath $archiveName -Force
           Write-Host "Created archive: $archiveName"
@@ -253,6 +259,7 @@ jobs:
         shell: pwsh
 
       - name: Create GitHub Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -265,9 +272,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build artifacts
+        id: upload
+        run: |
+          $safeRef = "${{ github.ref_name }}" -replace '/', '-'
+          echo "safe_ref=$safeRef" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build-${{ github.ref_name }}
+          name: windows-build-${{ steps.upload.outputs.safe_ref }}
           path: |
             Trusty-Windows-*.zip
           retention-days: 30

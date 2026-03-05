@@ -46,9 +46,10 @@ The archive includes everything: GUI, CLI client (`trusttunnel_client.exe`), Win
 2. Extract and move `.app` to `/Applications`
 3. Place `client/` folder next to `.app`
 4. First launch: Right-click → Open (Gatekeeper bypass)
-5. Configure and connect
+5. Configure server in "Settings"
+6. Click "Connect" — on **first connect only**, a macOS password dialog appears to grant VPN tunnel access (one-time setup, no terminal required)
 
-> macOS version is in alpha — no code signing, possible TUN limitations.
+> macOS version is in alpha — no code signing.
 
 ### Building from Source
 
@@ -164,6 +165,22 @@ trusty/
 ### macOS: Gatekeeper Blocks Launch
 - Right-click on `.app` → Open → Open
 - Or: System Settings → Privacy & Security → Allow
+
+### macOS: Password Dialog on First Connect
+- On the first VPN connection, a macOS password dialog appears — this is expected
+- Trusty sets the `setuid` bit on the CLI binary (one-time) so it can open the TUN device
+- After confirming, subsequent connections work without any dialogs
+- If the dialog was cancelled: just click Connect again
+
+### Windows: UDP Socket Errors (WSAENOBUFS / 10055)
+If you see `Failed to bind socket for UDP traffic (10055)` in logs, Windows has run out of socket buffer space. Fix with PowerShell (run as Administrator):
+```powershell
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name MaxUserPort -Value 65534 -Type DWord
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name TcpTimedWaitDelay -Value 30 -Type DWord
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters' -Name DefaultSendWindow -Value 65536 -Type DWord -Force
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters' -Name DefaultReceiveWindow -Value 65536 -Type DWord -Force
+```
+Then **restart Windows**.
 
 ### Connection Not Establishing
 1. Check server hostname, IP and port

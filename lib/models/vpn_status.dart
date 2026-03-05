@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/localization_helper.dart';
 
 /// VPN connection status
 enum VpnStatus {
@@ -14,15 +15,15 @@ extension VpnStatusExtension on VpnStatus {
   String get displayText {
     switch (this) {
       case VpnStatus.disconnected:
-        return 'Disconnected';
+        return L10n.tr.vpnStatusDisconnected;
       case VpnStatus.connecting:
-        return 'Connecting...';
+        return L10n.tr.vpnStatusConnecting;
       case VpnStatus.connected:
-        return 'Connected';
+        return L10n.tr.vpnStatusConnected;
       case VpnStatus.disconnecting:
-        return 'Disconnecting...';
+        return L10n.tr.vpnStatusDisconnecting;
       case VpnStatus.error:
-        return 'Error';
+        return L10n.tr.vpnStatusError;
     }
   }
 

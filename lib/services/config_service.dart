@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import '../models/server_config.dart';
+import '../utils/localization_helper.dart';
 import '../models/domain_group.dart';
 
 /// Service for managing application configuration
@@ -110,13 +111,13 @@ class ConfigService {
 
       // Validate config before generating TOML
       if (config.hostname.isEmpty) {
-        throw Exception('Hostname is empty! Check server settings.');
+        throw Exception(L10n.tr.configErrorHostnameEmpty);
       }
       if (config.address.isEmpty) {
-        throw Exception('Address is empty! Check server settings.');
+        throw Exception(L10n.tr.configErrorAddressEmpty);
       }
       if (config.username.isEmpty) {
-        throw Exception('Username is empty! Check server settings.');
+        throw Exception(L10n.tr.configErrorUsernameEmpty);
       }
 
       final toml = config.toToml();

@@ -12,6 +12,9 @@ import 'screens/split_tunnel_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/server_setup_screen.dart';
 import 'services/server_setup_service.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
+import 'utils/localization_helper.dart';
 
 // Global reference to VPN service for cleanup on process termination
 VpnService? _globalVpnService;
@@ -244,9 +247,15 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Trusty VPN',
         debugShowCheckedModeBanner: false,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: _buildLightTheme(),
         darkTheme: _buildDarkTheme(),
         themeMode: ThemeMode.system,
+        builder: (context, child) {
+          L10n.init(AppLocalizations.of(context)!);
+          return child!;
+        },
         home: const MainScreen(),
       ),
     );
@@ -354,7 +363,7 @@ class _MainScreenState extends State<MainScreen>
     // Setup tray menu
     await _updateTrayMenu();
 
-    await trayManager.setToolTip('Trusty VPN');
+    await trayManager.setToolTip(L10n.tr.trayTooltip);
   }
 
   /// Perform cleanup before app exit
@@ -389,17 +398,17 @@ class _MainScreenState extends State<MainScreen>
       items: [
         MenuItem(
           key: 'show',
-          label: 'Show Window',
+          label: L10n.tr.trayShowWindow,
         ),
         MenuItem.separator(),
         MenuItem(
           key: 'connect',
-          label: isConnected ? 'Disconnect' : 'Connect',
+          label: isConnected ? L10n.tr.trayDisconnect : L10n.tr.trayConnect,
         ),
         MenuItem.separator(),
         MenuItem(
           key: 'exit',
-          label: 'Exit',
+          label: L10n.tr.trayExit,
         ),
       ],
     );
@@ -453,19 +462,19 @@ class _MainScreenState extends State<MainScreen>
       context: context,
       barrierDismissible: true, // Allow dismissing by clicking outside
       builder: (context) => AlertDialog(
-        title: const Text('Close Application?'),
-        content: const Text(
+        title: Text(L10n.tr.dialogCloseTitle),
+        content: Text(
           'Do you want to exit or minimize to tray?\n\n'
           'If VPN is connected, it will be disconnected on exit.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Minimize to Tray'),
+            child: Text(L10n.tr.dialogCloseMinimize),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Exit'),
+            child: Text(L10n.tr.dialogCloseExit),
           ),
         ],
       ),
@@ -484,31 +493,31 @@ class _MainScreenState extends State<MainScreen>
   }
 
 
-  final List<NavigationDestination> _destinations = const [
+  List<NavigationDestination> get _destinations => [
     NavigationDestination(
-      icon: Icon(Icons.home_outlined),
+      icon: const Icon(Icons.home_outlined),
       selectedIcon: Icon(Icons.home),
-      label: 'Home',
+      label: L10n.tr.navHome,
     ),
     NavigationDestination(
-      icon: Icon(Icons.settings_outlined),
+      icon: const Icon(Icons.settings_outlined),
       selectedIcon: Icon(Icons.settings),
-      label: 'Settings',
+      label: L10n.tr.navSettings,
     ),
     NavigationDestination(
-      icon: Icon(Icons.call_split_outlined),
+      icon: const Icon(Icons.call_split_outlined),
       selectedIcon: Icon(Icons.call_split),
-      label: 'Split Tunnel',
+      label: L10n.tr.navSplitTunnel,
     ),
     NavigationDestination(
-      icon: Icon(Icons.article_outlined),
+      icon: const Icon(Icons.article_outlined),
       selectedIcon: Icon(Icons.article),
-      label: 'Logs',
+      label: L10n.tr.navLogs,
     ),
     NavigationDestination(
-      icon: Icon(Icons.cloud_upload_outlined),
+      icon: const Icon(Icons.cloud_upload_outlined),
       selectedIcon: Icon(Icons.cloud_upload),
-      label: 'Server',
+      label: L10n.tr.navServer,
     ),
   ];
 

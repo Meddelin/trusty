@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/localization_helper.dart';
 
 /// Steps of the server installation process
 enum SetupStep {
@@ -19,25 +20,25 @@ extension SetupStepExtension on SetupStep {
   String get displayText {
     switch (this) {
       case SetupStep.idle:
-        return 'Ready to install';
+        return L10n.tr.setupStepIdle;
       case SetupStep.connecting:
-        return 'Connecting via SSH...';
+        return L10n.tr.setupStepConnecting;
       case SetupStep.checkingSystem:
-        return 'Checking system...';
+        return L10n.tr.setupStepCheckingSystem;
       case SetupStep.installing:
-        return 'Installing Trusty...';
+        return L10n.tr.setupStepInstalling;
       case SetupStep.configuringServer:
-        return 'Configuring server...';
+        return L10n.tr.setupStepConfiguringServer;
       case SetupStep.obtainingCertificate:
-        return 'Obtaining certificate...';
+        return L10n.tr.setupStepObtainingCertificate;
       case SetupStep.startingService:
-        return 'Starting service...';
+        return L10n.tr.setupStepStartingService;
       case SetupStep.verifying:
-        return 'Verifying...';
+        return L10n.tr.setupStepVerifying;
       case SetupStep.completed:
-        return 'Installation complete';
+        return L10n.tr.setupStepCompleted;
       case SetupStep.failed:
-        return 'Installation failed';
+        return L10n.tr.setupStepFailed;
     }
   }
 

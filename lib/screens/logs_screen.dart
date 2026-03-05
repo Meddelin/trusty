@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/vpn_service.dart';
+import '../l10n/app_localizations.dart';
 
 class LogsScreen extends StatefulWidget {
   const LogsScreen({super.key});
@@ -72,9 +73,9 @@ class _LogsScreenState extends State<LogsScreen> {
                     Icons.terminal,
                     color: Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   Text(
-                    'Connection Logs',
+                    AppLocalizations.of(context)!.logsTitle,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -87,8 +88,8 @@ class _LogsScreenState extends State<LogsScreen> {
                       color: _autoScroll ? Theme.of(context).colorScheme.primary : null,
                     ),
                     tooltip: _autoScroll
-                        ? 'Auto-scroll enabled'
-                        : 'Auto-scroll disabled',
+                        ? AppLocalizations.of(context)!.logsAutoScrollEnabled
+                        : AppLocalizations.of(context)!.logsAutoScrollDisabled,
                     onPressed: () {
                       setState(() {
                         _autoScroll = !_autoScroll;
@@ -97,16 +98,16 @@ class _LogsScreenState extends State<LogsScreen> {
                   ),
                   // Copy logs
                   IconButton(
-                    icon: const Icon(Icons.copy),
-                    tooltip: 'Copy logs',
+                    icon: Icon(Icons.copy),
+                    tooltip: AppLocalizations.of(context)!.logsCopy,
                     onPressed: vpnService.logs.isEmpty
                         ? null
                         : () => _copyLogs(vpnService.logs),
                   ),
                   // Clear logs
                   IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: 'Clear logs',
+                    icon: Icon(Icons.delete_outline),
+                    tooltip: AppLocalizations.of(context)!.logsClear,
                     onPressed: vpnService.logs.isEmpty
                         ? null
                         : () => _confirmClearLogs(vpnService),
@@ -140,9 +141,9 @@ class _LogsScreenState extends State<LogsScreen> {
                     size: 16,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Text(
-                    'Total entries: ${vpnService.logs.length}',
+                    AppLocalizations.of(context)!.logsTotalEntries(vpnService.logs.length),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -166,16 +167,16 @@ class _LogsScreenState extends State<LogsScreen> {
             size: 64,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Text(
-            'Logs are empty',
+            AppLocalizations.of(context)!.logsEmpty,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
-            'Connect to VPN to see logs',
+            AppLocalizations.of(context)!.logsConnectToSee,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -251,8 +252,8 @@ class _LogsScreenState extends State<LogsScreen> {
     Clipboard.setData(ClipboardData(text: text));
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Logs copied to clipboard'),
+      SnackBar(
+        content: Text(AppLocalizations.of(context)!.logsCopied),
         duration: Duration(seconds: 2),
       ),
     );
@@ -262,26 +263,24 @@ class _LogsScreenState extends State<LogsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear logs?'),
-        content: const Text(
-          'All log entries will be deleted. This action cannot be undone.',
-        ),
+        title: Text(AppLocalizations.of(context)!.logsClearTitle),
+        content: Text(AppLocalizations.of(context)!.logsClearMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)!.commonCancel),
           ),
           TextButton(
             onPressed: () {
               vpnService.clearLogs();
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Logs cleared'),
+                SnackBar(
+                  content: Text(AppLocalizations.of(context)!.logsCleared),
                 ),
               );
             },
-            child: const Text('Clear'),
+            child: Text(AppLocalizations.of(context)!.commonClear),
           ),
         ],
       ),

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/vpn_status.dart';
 import '../services/vpn_service.dart';
 import '../services/config_service.dart';
+import '../l10n/app_localizations.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -121,7 +122,7 @@ class HomeScreen extends StatelessWidget {
           elevation: 4,
         ),
         child: isLoading
-            ? const Row(
+            ? Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   SizedBox(
@@ -134,7 +135,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   SizedBox(width: 12),
                   Text(
-                    'Please wait...',
+                    AppLocalizations.of(context)!.homePleaseWait,
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ],
@@ -148,11 +149,11 @@ class HomeScreen extends StatelessWidget {
                         : Icons.play_circle_outline,
                     size: 28,
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   Text(
                     status == VpnStatus.connected
-                        ? 'Disconnect'
-                        : 'Connect',
+                        ? AppLocalizations.of(context)!.homeDisconnect
+                        : AppLocalizations.of(context)!.homeConnect,
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -180,9 +181,9 @@ class HomeScreen extends StatelessWidget {
                 Icons.info_outline,
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Text(
-                'Information',
+                AppLocalizations.of(context)!.homeInfoTitle,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onPrimaryContainer,
                       fontWeight: FontWeight.bold,
@@ -190,11 +191,11 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Text(
-            '• Configure server settings in the "Settings" tab\n'
-            '• Make sure ${Platform.isWindows ? "trusttunnel_client.exe" : "trusttunnel_client"} is in the client/ directory\n'
-            '• Connection logs are available in the "Logs" tab',
+            '• ${AppLocalizations.of(context)!.homeInfoLine1}\n'
+            '• ${Platform.isWindows ? AppLocalizations.of(context)!.homeInfoLineClientWindows : AppLocalizations.of(context)!.homeInfoLineClientOther}\n'
+            '• ${AppLocalizations.of(context)!.homeInfoLine3}',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
@@ -226,7 +227,7 @@ class HomeScreen extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(AppLocalizations.of(context)!.homeError(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),

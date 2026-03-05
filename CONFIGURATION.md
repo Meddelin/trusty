@@ -494,6 +494,18 @@ To restore settings or use a shared configuration:
 - Check if encrypted DNS is supported by your network
 - Test with plain DNS first (8.8.8.8)
 
+### Windows: "System DNS proxy request failed" spam in logs
+These are INFO-level messages logged when the DNS proxy can't immediately forward queries during connection startup. They are normal and self-resolve within a few seconds once the tunnel is fully established. The GUI automatically collapses repeated lines into a single `(×N)` counter.
+
+### Windows: UDP socket error (WSAENOBUFS / code 10055)
+`Failed to bind socket for UDP traffic (10055)` means Windows ran out of ephemeral socket buffer space, usually after a previous VPN session. Fix (requires Administrator PowerShell, then **reboot**):
+```powershell
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name MaxUserPort -Value 65534 -Type DWord
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name TcpTimedWaitDelay -Value 30 -Type DWord
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters' -Name DefaultSendWindow -Value 65536 -Type DWord -Force
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters' -Name DefaultReceiveWindow -Value 65536 -Type DWord -Force
+```
+
 ### Split tunneling not working
 - Verify exclusion/inclusion format
 - Check VPN mode is correct (General vs Selective)

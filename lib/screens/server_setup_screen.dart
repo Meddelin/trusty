@@ -6,6 +6,7 @@ import '../models/setup_step.dart';
 import '../models/server_setup_config.dart';
 import '../services/server_setup_service.dart';
 import '../services/config_service.dart';
+import '../l10n/app_localizations.dart';
 
 class ServerSetupScreen extends StatefulWidget {
   const ServerSetupScreen({super.key});
@@ -94,8 +95,8 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
       await setupService.applyToClientConfig(configService);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Client settings updated'),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.serverSettingsApplied),
             backgroundColor: Colors.green,
           ),
         );
@@ -104,7 +105,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(AppLocalizations.of(context)!.serverError(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -128,35 +129,35 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
               children: [
                 // Info banner
                 _buildInfoBanner(),
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
 
                 // SSH Section
-                _buildSectionTitle('SSH Connection'),
+                _buildSectionTitle(AppLocalizations.of(context)!.serverSectionSsh),
                 _buildTextField(
                   controller: _hostController,
-                  label: 'VPS IP Address',
+                  label: AppLocalizations.of(context)!.serverVpsIp,
                   icon: Icons.computer,
                   enabled: !isRunning,
                   validator: (v) =>
-                      (v?.isEmpty ?? true) ? 'Enter IP address' : null,
+                      (v?.isEmpty ?? true) ? AppLocalizations.of(context)!.serverVpsIpError : null,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
                       flex: 2,
                       child: _buildTextField(
                         controller: _sshUserController,
-                        label: 'Username',
+                        label: AppLocalizations.of(context)!.serverSshUser,
                         icon: Icons.person,
                         enabled: !isRunning,
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: 16),
                     Expanded(
                       child: _buildTextField(
                         controller: _sshPortController,
-                        label: 'SSH Port',
+                        label: AppLocalizations.of(context)!.serverSshPort,
                         icon: Icons.pin,
                         enabled: !isRunning,
                         keyboardType: TextInputType.number,
@@ -168,28 +169,28 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
 
                 // Auth type toggle
                 _buildAuthToggle(isRunning),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
 
                 if (_useKeyAuth)
                   _buildTextField(
                     controller: _sshKeyPathController,
-                    label: 'SSH Key Path',
+                    label: AppLocalizations.of(context)!.serverSshKeyPath,
                     icon: Icons.key,
                     enabled: !isRunning,
                     hintText: Platform.isWindows ? r'C:\Users\user\.ssh\id_rsa' : '~/.ssh/id_rsa',
                     validator: (v) => _useKeyAuth && (v?.isEmpty ?? true)
-                        ? 'Enter key path'
+                        ? AppLocalizations.of(context)!.serverSshKeyPathError
                         : null,
                   )
                 else
                   _buildTextField(
                     controller: _sshPasswordController,
-                    label: 'SSH Password',
+                    label: AppLocalizations.of(context)!.serverSshPassword,
                     icon: Icons.lock,
                     enabled: !isRunning,
                     obscureText: !_sshPasswordVisible,
                     validator: (v) => !_useKeyAuth && (v?.isEmpty ?? true)
-                        ? 'Enter password'
+                        ? AppLocalizations.of(context)!.serverSshPasswordError
                         : null,
                     suffixIcon: IconButton(
                       icon: Icon(_sshPasswordVisible
@@ -200,48 +201,48 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                     ),
                   ),
 
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
 
                 // Domain & Certificate Section
-                _buildSectionTitle('Domain and Certificate'),
+                _buildSectionTitle(AppLocalizations.of(context)!.serverSectionDomain),
                 _buildTextField(
                   controller: _domainController,
-                  label: 'Domain',
+                  label: AppLocalizations.of(context)!.serverDomain,
                   icon: Icons.language,
                   enabled: !isRunning,
                   hintText: 'vpn.example.com',
                   validator: (v) =>
-                      (v?.isEmpty ?? true) ? 'Enter domain' : null,
+                      (v?.isEmpty ?? true) ? AppLocalizations.of(context)!.serverDomainError : null,
                 ),
                 const SizedBox(height: 8),
                 Padding(
-                  padding: const EdgeInsets.only(left: 12),
+                  padding: EdgeInsets.only(left: 12),
                   child: Text(
-                    'Domain must point to server IP (A record in DNS)',
+                    AppLocalizations.of(context)!.serverDomainHint,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.outline,
                         ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
                       flex: 2,
                       child: _buildTextField(
                         controller: _emailController,
-                        label: 'Email (Let\'s Encrypt)',
+                        label: AppLocalizations.of(context)!.serverEmail,
                         icon: Icons.email,
                         enabled: !isRunning,
                         validator: (v) =>
-                            (v?.isEmpty ?? true) ? 'Enter email' : null,
+                            (v?.isEmpty ?? true) ? AppLocalizations.of(context)!.serverEmailError : null,
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: 16),
                     Expanded(
                       child: _buildTextField(
                         controller: _listenPortController,
-                        label: 'Port',
+                        label: AppLocalizations.of(context)!.settingsPort,
                         icon: Icons.pin,
                         enabled: !isRunning,
                         keyboardType: TextInputType.number,
@@ -250,25 +251,25 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
 
                 // VPN Account Section
-                _buildSectionTitle('VPN Account'),
+                _buildSectionTitle(AppLocalizations.of(context)!.serverSectionVpnAccount),
                 _buildTextField(
                   controller: _vpnUsernameController,
-                  label: 'VPN Username',
+                  label: AppLocalizations.of(context)!.serverVpnUsername,
                   icon: Icons.person_outline,
                   enabled: !isRunning,
                   validator: (v) =>
-                      (v?.isEmpty ?? true) ? 'Enter username' : null,
+                      (v?.isEmpty ?? true) ? AppLocalizations.of(context)!.serverVpnUsernameError : null,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
                       child: _buildTextField(
                         controller: _vpnPasswordController,
-                        label: 'VPN Password',
+                        label: AppLocalizations.of(context)!.serverVpnPassword,
                         icon: Icons.lock_outline,
                         enabled: !isRunning,
                         obscureText: !_vpnPasswordVisible,
@@ -283,9 +284,9 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Tooltip(
-                      message: 'Generate password',
+                      message: AppLocalizations.of(context)!.serverGeneratePassword,
                       child: IconButton.filled(
                         onPressed: isRunning
                             ? null
@@ -312,7 +313,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                     onPressed: isRunning ? null : _startInstallation,
                     icon: Icon(isRunning ? Icons.hourglass_top : Icons.rocket_launch),
                     label: Text(
-                      isRunning ? 'Installing...' : 'Install Server',
+                      isRunning ? AppLocalizations.of(context)!.serverInstalling : AppLocalizations.of(context)!.serverInstallButton,
                       style: const TextStyle(fontSize: 16),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -362,12 +363,10 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
         children: [
           Icon(Icons.info_outline,
               color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 12),
-          const Expanded(
+          SizedBox(width: 12),
+          Expanded(
             child: Text(
-              'TrustTunnel server installation on a remote VPS. '
-              'Requires a VPS with Linux (Ubuntu/Debian), a domain name '
-              'and SSH access (root).',
+              AppLocalizations.of(context)!.serverInfoBanner,
             ),
           ),
         ],
@@ -377,15 +376,15 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
 
   Widget _buildAuthToggle(bool disabled) {
     return SegmentedButton<bool>(
-      segments: const [
+      segments: [
         ButtonSegment(
           value: false,
-          label: Text('Password'),
+          label: Text(AppLocalizations.of(context)!.serverAuthPassword),
           icon: Icon(Icons.lock),
         ),
         ButtonSegment(
           value: true,
-          label: Text('SSH Key'),
+          label: Text(AppLocalizations.of(context)!.serverAuthKey),
           icon: Icon(Icons.key),
         ),
       ],
@@ -530,16 +529,16 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
             child: Row(
               children: [
                 const Icon(Icons.terminal, size: 20),
-                const SizedBox(width: 8),
-                const Text('Installation Log',
+                SizedBox(width: 8),
+                Text(AppLocalizations.of(context)!.serverInstallLog,
                     style: TextStyle(fontWeight: FontWeight.bold)),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: () {
                     service.clearLogs();
                   },
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Clear'),
+                  icon: Icon(Icons.delete_outline, size: 18),
+                  label: Text(AppLocalizations.of(context)!.commonClear),
                 ),
               ],
             ),
@@ -550,8 +549,8 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             child: service.logs.isEmpty
-                ? const Center(
-                    child: Text('Log is empty',
+                ? Center(
+                    child: Text(AppLocalizations.of(context)!.serverLogEmpty,
                         style: TextStyle(color: Colors.grey)))
                 : SingleChildScrollView(
                     child: SelectableText(
@@ -577,12 +576,12 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
                 Icon(Icons.check_circle, color: Colors.green, size: 28),
                 SizedBox(width: 12),
                 Text(
-                  'Server installed and running!',
+                  AppLocalizations.of(context)!.serverInstalled,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -591,11 +590,11 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             Text(
-              'Domain: ${_domainController.text}\n'
-              'Port: ${_listenPortController.text}\n'
-              'VPN username: ${_vpnUsernameController.text}',
+              AppLocalizations.of(context)!.serverSuccessInfo(_domainController.text, _listenPortController.text, _vpnUsernameController.text),
+
+
               style: const TextStyle(fontFamily: 'Consolas', fontSize: 13),
             ),
             const SizedBox(height: 16),
@@ -603,8 +602,8 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: _applyToClient,
-                icon: const Icon(Icons.settings_suggest),
-                label: const Text('Apply Client Settings'),
+                icon: Icon(Icons.settings_suggest),
+                label: Text(AppLocalizations.of(context)!.serverApplySettings),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,

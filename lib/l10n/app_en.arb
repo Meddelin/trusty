@@ -1,0 +1,270 @@
+{
+  "@@locale": "en",
+  "appTitle": "Trusty VPN",
+  "singleInstanceTitle": "Trusty VPN is already running",
+  "singleInstanceMessage": "The application is already open.\nCheck the system tray or taskbar.",
+  "singleInstanceClosing": "This window will close in 5 seconds...",
+  "trayShowWindow": "Show Window",
+  "trayConnect": "Connect",
+  "trayDisconnect": "Disconnect",
+  "trayExit": "Exit",
+  "trayTooltip": "Trusty VPN",
+  "dialogCloseTitle": "Close Application?",
+  "dialogCloseMessage": "Do you want to exit or minimize to tray?\n\nIf VPN is connected, it will be disconnected on exit.",
+  "dialogCloseMinimize": "Minimize to Tray",
+  "dialogCloseExit": "Exit",
+  "navHome": "Home",
+  "navSettings": "Settings",
+  "navSplitTunnel": "Split Tunnel",
+  "navLogs": "Logs",
+  "navServer": "Server",
+  "vpnStatusDisconnected": "Disconnected",
+  "vpnStatusConnecting": "Connecting...",
+  "vpnStatusConnected": "Connected",
+  "vpnStatusDisconnecting": "Disconnecting...",
+  "vpnStatusError": "Error",
+  "setupStepIdle": "Ready to install",
+  "setupStepConnecting": "Connecting via SSH...",
+  "setupStepCheckingSystem": "Checking system...",
+  "setupStepInstalling": "Installing Trusty...",
+  "setupStepConfiguringServer": "Configuring server...",
+  "setupStepObtainingCertificate": "Obtaining certificate...",
+  "setupStepStartingService": "Starting service...",
+  "setupStepVerifying": "Verifying...",
+  "setupStepCompleted": "Installation complete",
+  "setupStepFailed": "Installation failed",
+  "configErrorHostnameEmpty": "Hostname is empty! Check server settings.",
+  "configErrorAddressEmpty": "Address is empty! Check server settings.",
+  "configErrorUsernameEmpty": "Username is empty! Check server settings.",
+  "homePleaseWait": "Please wait...",
+  "homeDisconnect": "Disconnect",
+  "homeConnect": "Connect",
+  "homeInfoTitle": "Information",
+  "homeInfoLine1": "Configure server settings in the \"Settings\" tab",
+  "homeInfoLineClientWindows": "Make sure trusttunnel_client.exe is in the client/ directory",
+  "homeInfoLineClientOther": "Make sure trusttunnel_client is in the client/ directory",
+  "homeInfoLine3": "Connection logs are available in the \"Logs\" tab",
+  "homeError": "Error: {error}",
+  "@homeError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "logsTitle": "Connection Logs",
+  "logsAutoScrollEnabled": "Auto-scroll enabled",
+  "logsAutoScrollDisabled": "Auto-scroll disabled",
+  "logsCopy": "Copy logs",
+  "logsClear": "Clear logs",
+  "logsTotalEntries": "Total entries: {count}",
+  "@logsTotalEntries": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "logsEmpty": "Logs are empty",
+  "logsConnectToSee": "Connect to VPN to see logs",
+  "logsClearTitle": "Clear logs?",
+  "logsClearMessage": "All log entries will be deleted. This action cannot be undone.",
+  "logsCopied": "Logs copied to clipboard",
+  "logsCleared": "Logs cleared",
+  "commonCancel": "Cancel",
+  "commonClear": "Clear",
+  "commonAdd": "Add",
+  "commonSave": "Save",
+  "commonDelete": "Delete",
+  "settingsWarningConnected": "Disconnect from VPN before changing settings",
+  "settingsSectionServer": "Server",
+  "settingsHostname": "Hostname",
+  "settingsHostnameError": "Enter hostname",
+  "settingsAddress": "IP Address",
+  "settingsAddressError": "Enter IP address",
+  "settingsPort": "Port",
+  "settingsPortErrorEmpty": "Enter port",
+  "settingsPortErrorInvalid": "Invalid port",
+  "settingsSectionAuth": "Authentication",
+  "settingsUsername": "Username",
+  "settingsUsernameError": "Enter username",
+  "settingsPassword": "Password",
+  "settingsPasswordError": "Enter password",
+  "settingsSectionNetwork": "Network",
+  "settingsDns": "DNS Server",
+  "settingsDnsError": "Enter DNS server",
+  "settingsProtocol": "Protocol",
+  "settingsLogLevel": "Log Level",
+  "settingsSectionAdvanced": "Advanced",
+  "settingsIpv6": "IPv6 Support",
+  "settingsSkipVerification": "Skip Certificate Verification",
+  "settingsAntiDpi": "Anti-DPI",
+  "settingsSave": "Save Settings",
+  "settingsSaved": "Settings saved",
+  "settingsSaveError": "Save error: {error}",
+  "@settingsSaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "splitTunnelWarningConnected": "Disconnect from VPN before changing settings",
+  "splitTunnelVpnMode": "VPN Mode",
+  "splitTunnelModeGeneralTitle": "All traffic through VPN",
+  "splitTunnelModeGeneralSubtitle": "Exclusions will not go through VPN",
+  "splitTunnelModeSelectiveTitle": "Only selected traffic through VPN",
+  "splitTunnelModeSelectiveSubtitle": "Only specified domains/apps through VPN",
+  "splitTunnelDomainsTab": "Domains ({count})",
+  "@splitTunnelDomainsTab": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "splitTunnelAppsTab": "Apps ({count})",
+  "@splitTunnelAppsTab": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "splitTunnelAutoSave": "Settings are saved automatically",
+  "splitTunnelDomainsExclude": "Domains that will NOT go through VPN:",
+  "splitTunnelDomainsInclude": "Domains that WILL go through VPN:",
+  "splitTunnelDomainsHint": "Domains (google.com), IPs (8.8.8.8), CIDR (10.0.0.0/8)",
+  "splitTunnelDomainsInputHint": "Enter domain, IP or CIDR",
+  "splitTunnelNoDomains": "No domains added",
+  "splitTunnelOther": "Other",
+  "splitTunnelAddToGroup": "Add domain to \"{groupName}\"",
+  "@splitTunnelAddToGroup": {
+    "placeholders": {
+      "groupName": {
+        "type": "String"
+      }
+    }
+  },
+  "splitTunnelEnterDomain": "Enter domain",
+  "splitTunnelRenameGroup": "Rename Group",
+  "splitTunnelGroupName": "Group name",
+  "splitTunnelDeleteGroupTitle": "Delete group?",
+  "splitTunnelDeleteGroupMessage": "Group \"{groupName}\" and all its domains will be deleted.",
+  "@splitTunnelDeleteGroupMessage": {
+    "placeholders": {
+      "groupName": {
+        "type": "String"
+      }
+    }
+  },
+  "splitTunnelDomainCount": "{count, plural, =1{1 domain} other{{count} domains}}",
+  "@splitTunnelDomainCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "splitTunnelSuggestionTitle": "Detected in logs — Add to exclusions?",
+  "splitTunnelSuggestionAddToGroup": "Add to group",
+  "splitTunnelSuggestionAddStandalone": "Add standalone",
+  "splitTunnelSuggestionHide": "Hide",
+  "splitTunnelDomainAlreadyAdded": "This domain is already added",
+  "splitTunnelSaveError": "Save error: {error}",
+  "@splitTunnelSaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "splitTunnelAppsExclude": "Apps that will NOT use VPN:",
+  "splitTunnelAppsInclude": "Apps that WILL use VPN:",
+  "splitTunnelSearchApps": "Search apps...",
+  "splitTunnelNoApps": "No apps found",
+  "splitTunnelSelectedApps": "Selected apps: {count}",
+  "@splitTunnelSelectedApps": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "splitTunnelToGroup": "To \"{groupName}\"",
+  "@splitTunnelToGroup": {
+    "placeholders": {
+      "groupName": {
+        "type": "String"
+      }
+    }
+  },
+  "discoveryTitle": "Add {domain}",
+  "@discoveryTitle": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      }
+    }
+  },
+  "discoverySearching": "Searching for related domains...",
+  "discoveryRelatedFound": "Related domains found:",
+  "discoveryGroupName": "Group name",
+  "discoveryNoRelated": "No related domains found.",
+  "discoveryAddStandalone": "Domain will be added standalone.",
+  "discoveryWithoutGroup": "Without group",
+  "discoveryAddGroup": "Add group",
+  "serverInfoBanner": "TrustTunnel server installation on a remote VPS. Requires a VPS with Linux (Ubuntu/Debian), a domain name and SSH access (root).",
+  "serverSectionSsh": "SSH Connection",
+  "serverVpsIp": "VPS IP Address",
+  "serverVpsIpError": "Enter IP address",
+  "serverSshPort": "SSH Port",
+  "serverSshUser": "Username",
+  "serverSshPassword": "SSH Password",
+  "serverSshPasswordError": "Enter password",
+  "serverSshKeyPath": "SSH Key Path",
+  "serverSshKeyPathError": "Enter key path",
+  "serverAuthPassword": "Password",
+  "serverAuthKey": "SSH Key",
+  "serverSectionDomain": "Domain and Certificate",
+  "serverDomain": "Domain",
+  "serverDomainError": "Enter domain",
+  "serverDomainHint": "Domain must point to server IP (A record in DNS)",
+  "serverEmail": "Email (Let's Encrypt)",
+  "serverEmailError": "Enter email",
+  "serverSectionVpnAccount": "VPN Account",
+  "serverVpnUsername": "VPN Username",
+  "serverVpnUsernameError": "Enter username",
+  "serverVpnPassword": "VPN Password",
+  "serverVpnPasswordError": "Enter password",
+  "serverGeneratePassword": "Generate password",
+  "serverInstallButton": "Install Server",
+  "serverInstalling": "Installing...",
+  "serverInstallLog": "Installation Log",
+  "serverLogEmpty": "Log is empty",
+  "serverInstalled": "Server installed and running!",
+  "serverSuccessInfo": "Domain: {domain}\nPort: {port}\nVPN username: {username}",
+  "@serverSuccessInfo": {
+    "placeholders": {
+      "domain": {
+        "type": "String"
+      },
+      "port": {
+        "type": "String"
+      },
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "serverApplySettings": "Apply Client Settings",
+  "serverSettingsApplied": "Client settings updated",
+  "serverError": "Error: {error}",
+  "@serverError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
+}

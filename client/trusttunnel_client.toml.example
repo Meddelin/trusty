@@ -23,7 +23,7 @@ killswitch_allow_ports = []
 
 # When enabled, a post-quantum group may be used for key exchange
 # in TLS handshakes initiated by the VPN client.
-post_quantum_group_enabled = false
+post_quantum_group_enabled = true
 
 # Domains and addresses which should be routed in a special manner.
 # Supported syntax:
@@ -108,6 +108,9 @@ upstream_fallback_protocol = ""
 
 # Is anti-DPI measures should be enabled
 anti_dpi = false
+
+# Custom SNI value for TLS handshake (leave empty to use hostname)
+custom_sni = ""
 
 
 # Defines the way to listen to network traffic by the kind of the nested table.

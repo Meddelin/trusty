@@ -62,6 +62,8 @@ flutter build macos --release     # macOS
 
 The GUI is a wrapper around the CLI. You need to download the CLI binary separately.
 
+The latest tested CLI version is **v1.0.19** from [TrustTunnelClient releases](https://github.com/TrustTunnel/TrustTunnelClient/releases).
+
 ### Windows
 
 ```powershell
@@ -104,6 +106,8 @@ rm cli.tar.gz
 ```
 
 Wintun is **not needed** on macOS — the built-in utun is used.
+
+> **Note:** On first VPN connect, Trusty will prompt for your Mac password via a system dialog to set the `setuid` bit on the binary. This is a one-time step — no terminal or `sudo` needed.
 
 ## Directory Structure for Running
 

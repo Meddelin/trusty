@@ -17,6 +17,10 @@ class VpnService extends ChangeNotifier {
   final List<void Function(String)> _logObservers = [];
   Timer? _logNotifyTimer;
 
+  // Deduplication: collapse consecutive log lines that differ only in numbers
+  String? _lastMsgPattern;
+  int _dupCount = 0;
+
   VpnService(this._configService);
 
   VpnStatus get status => _status;
@@ -79,6 +83,12 @@ class VpnService extends ChangeNotifier {
         );
       }
 
+      // On macOS, the client needs root to open a TUN device.
+      // We use setuid: set it once via the macOS password dialog, then it works forever.
+      if (Platform.isMacOS) {
+        await _ensureMacOSPrivileges(exePath);
+      }
+
       final configPath = await _configService.getConfigFilePath();
 
       // Always write config file with current settings
@@ -96,12 +106,7 @@ class VpnService extends ChangeNotifier {
       try {
         _process = await Process.start(
           exePath,
-          [
-            '--config',
-            configPath,
-            '--loglevel',
-            config.logLevel,
-          ],
+          ['--config', configPath, '--loglevel', config.logLevel],
           runInShell: false,
         );
 
@@ -202,9 +207,21 @@ class VpnService extends ChangeNotifier {
               await Future.delayed(const Duration(seconds: 2));
             }
           } else {
-            // macOS/Linux: no Wintun, minimal delay
-            _errorMessage = 'Process exited with error (code: $exitCode)';
-            await Future.delayed(const Duration(milliseconds: 500));
+            // macOS/Linux: check for TUN permission errors (e.g. setuid was removed)
+            final logsToCheck = _logs.length > 15 ? _logs.sublist(_logs.length - 15) : _logs;
+            final lastLogs = logsToCheck.join('\n').toLowerCase();
+
+            final isTunPermissionDenied = lastLogs.contains('tun_open') &&
+                (lastLogs.contains('operation not permitted') || lastLogs.contains('(1) operation'));
+
+            if (isTunPermissionDenied && Platform.isMacOS) {
+              _errorMessage = 'TUN device permission lost. Reconnect to re-grant access.';
+              _addLog('🔒 TUN permission was reset (e.g. after an app update). Reconnecting will show the password dialog again.');
+              await Future.delayed(const Duration(seconds: 2));
+            } else {
+              _errorMessage = 'Process exited with error (code: $exitCode)';
+              await Future.delayed(const Duration(milliseconds: 500));
+            }
           }
         }
 
@@ -219,6 +236,8 @@ class VpnService extends ChangeNotifier {
         process.exitCode.then((code) async {
           _addLog('🛑 Process exited with code: $code');
           _process = null;
+          _lastMsgPattern = null;
+          _dupCount = 0;
 
           // Wait for Wintun to release
           await Future.delayed(const Duration(seconds: 3));
@@ -342,7 +361,39 @@ class VpnService extends ChangeNotifier {
   /// Clear logs
   void clearLogs() {
     _logs.clear();
+    _lastMsgPattern = null;
+    _dupCount = 0;
     notifyListeners();
+  }
+
+  /// Check whether the binary already has the setuid bit set (macOS).
+  Future<bool> _hasMacOSSetuid(String exePath) async {
+    final result = await Process.run('stat', ['-f', '%Sp', exePath]);
+    // e.g. "-rwsr-xr-x" — 's' in owner-execute position means setuid
+    return result.exitCode == 0 &&
+        result.stdout.toString().trim().length > 3 &&
+        result.stdout.toString().trim()[3] == 's';
+  }
+
+  /// Ensure the client binary has the setuid bit. If not, prompt the user
+  /// via the standard macOS password dialog (osascript) and set it.
+  Future<void> _ensureMacOSPrivileges(String exePath) async {
+    if (await _hasMacOSSetuid(exePath)) return;
+
+    _addLog('🔐 One-time setup: requesting administrator access to enable VPN tunnel...');
+
+    final escapedPath = exePath.replaceAll('"', '\\"');
+    final result = await Process.run(
+      'osascript',
+      ['-e', 'do shell script "chmod u+s \\"$escapedPath\\"" with administrator privileges'],
+    );
+
+    if (result.exitCode != 0) {
+      // User cancelled or wrong password
+      throw Exception('Administrator access is required to create a VPN tunnel.\nPlease try again and enter your Mac password when prompted.');
+    }
+
+    _addLog('✅ Setup complete. VPN tunnel access granted.');
   }
 
   /// Format log line based on log level
@@ -361,9 +412,26 @@ class VpnService extends ChangeNotifier {
     return '📋 $line';
   }
 
-  /// Add log entry
+  /// Add log entry, collapsing consecutive lines that differ only in numbers.
   void _addLog(String message) {
     try {
+      // Strip all digit sequences to produce a stable pattern.
+      // e.g. "request id=14812 failed" and "request id=14813 failed" → same pattern.
+      final pattern = message.replaceAll(RegExp(r'\d+'), '#');
+
+      if (pattern == _lastMsgPattern && _logs.isNotEmpty) {
+        // Same pattern as previous line — update the counter in-place.
+        _dupCount++;
+        final last = _logs.last;
+        final base = last.contains(' (×') ? last.substring(0, last.lastIndexOf(' (×')) : last;
+        _logs[_logs.length - 1] = '$base (×${_dupCount + 1})';
+        _scheduleLogNotify();
+        return;
+      }
+
+      _lastMsgPattern = pattern;
+      _dupCount = 0;
+
       final timestamp = DateTime.now().toString().substring(11, 19);
       final entry = '[$timestamp] $message';
       _logs.add(entry);

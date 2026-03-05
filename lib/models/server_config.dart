@@ -20,6 +20,7 @@ class ServerConfig {
   final bool antiDpi;
   final String dns;
   final String logLevel;
+  final String customSni;
 
   // Split tunneling settings
   final VpnMode vpnMode;
@@ -39,6 +40,7 @@ class ServerConfig {
     this.antiDpi = false,
     this.dns = '8.8.8.8',
     this.logLevel = 'info',
+    this.customSni = '',
     this.vpnMode = VpnMode.general,
     this.splitTunnelDomains = const [],
     this.splitTunnelApps = const [],
@@ -60,6 +62,7 @@ class ServerConfig {
       antiDpi: false,
       dns: '8.8.8.8',
       logLevel: 'info',
+      customSni: '',
       vpnMode: VpnMode.general,
       splitTunnelDomains: [],
       splitTunnelApps: [],
@@ -81,6 +84,7 @@ class ServerConfig {
       'antiDpi': antiDpi,
       'dns': dns,
       'logLevel': logLevel,
+      'customSni': customSni,
       'vpnMode': vpnMode.name,
       'splitTunnelDomains': splitTunnelDomains,
       'splitTunnelApps': splitTunnelApps,
@@ -98,6 +102,7 @@ class ServerConfig {
     final upstreamFallbackProtocol = json['upstreamFallbackProtocol'] as String? ?? '';
     final dns = json['dns'] as String? ?? '8.8.8.8';
     final logLevel = json['logLevel'] as String? ?? 'info';
+    final customSni = json['customSni'] as String? ?? '';
 
     return ServerConfig(
       hostname: hostname,
@@ -112,6 +117,7 @@ class ServerConfig {
       antiDpi: json['antiDpi'] as bool? ?? false,
       dns: dns,
       logLevel: logLevel,
+      customSni: customSni,
       vpnMode: VpnMode.values.firstWhere(
         (e) => e.name == json['vpnMode'],
         orElse: () => VpnMode.general,
@@ -187,7 +193,7 @@ killswitch_allow_ports = []
 
 # When enabled, a post-quantum group may be used for key exchange
 # in TLS handshakes initiated by the VPN client.
-post_quantum_group_enabled = false
+post_quantum_group_enabled = true
 
 # Domains and addresses which should be routed in a special manner.
 # Supported syntax:
@@ -238,6 +244,8 @@ upstream_protocol = "$upProto"
 upstream_fallback_protocol = "$upFallback"
 # Is anti-DPI measures should be enabled
 anti_dpi = $dpi
+# Custom SNI value for TLS handshake (leave empty to use hostname)
+custom_sni = "${customSni}"
 
 
 # Defines the way to listen to network traffic by the kind of the nested table.
@@ -277,6 +285,7 @@ change_system_dns = true
     bool? antiDpi,
     String? dns,
     String? logLevel,
+    String? customSni,
     VpnMode? vpnMode,
     List<String>? splitTunnelDomains,
     List<String>? splitTunnelApps,
@@ -295,6 +304,7 @@ change_system_dns = true
       antiDpi: antiDpi ?? this.antiDpi,
       dns: dns ?? this.dns,
       logLevel: logLevel ?? this.logLevel,
+      customSni: customSni ?? this.customSni,
       vpnMode: vpnMode ?? this.vpnMode,
       splitTunnelDomains: splitTunnelDomains ?? this.splitTunnelDomains,
       splitTunnelApps: splitTunnelApps ?? this.splitTunnelApps,

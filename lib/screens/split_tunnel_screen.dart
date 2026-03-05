@@ -7,6 +7,7 @@ import '../models/vpn_status.dart';
 import '../services/config_service.dart';
 import '../services/vpn_service.dart';
 import '../services/domain_discovery_service.dart';
+import '../l10n/app_localizations.dart';
 
 class SplitTunnelScreen extends StatefulWidget {
   const SplitTunnelScreen({super.key});
@@ -346,7 +347,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Save error: $e'),
+            content: Text(AppLocalizations.of(context)!.splitTunnelSaveError(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -363,7 +364,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     if (_getAllCurrentDomains().contains(domain.toLowerCase())) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This domain is already added')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.splitTunnelDomainAlreadyAdded)),
         );
       }
       return;
@@ -418,12 +419,12 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Add domain to "${group.name}"'),
+        title: Text(AppLocalizations.of(context)!.splitTunnelAddToGroup(group.name)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Enter domain',
+          decoration: InputDecoration(
+            hintText: AppLocalizations.of(context)!.splitTunnelEnterDomain,
             prefixIcon: Icon(Icons.add_link, size: 20),
           ),
           onSubmitted: (value) => Navigator.pop(context, value.trim()),
@@ -431,11 +432,11 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)!.commonCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Add'),
+            child: Text(AppLocalizations.of(context)!.commonAdd),
           ),
         ],
       ),
@@ -481,21 +482,21 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename Group'),
+        title: Text(AppLocalizations.of(context)!.splitTunnelRenameGroup),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Group name'),
+          decoration: InputDecoration(hintText: AppLocalizations.of(context)!.splitTunnelGroupName),
           onSubmitted: (value) => Navigator.pop(context, value.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)!.commonCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Save'),
+            child: Text(AppLocalizations.of(context)!.commonSave),
           ),
         ],
       ),
@@ -591,13 +592,13 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.orange),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
                             Icon(Icons.warning_amber, color: Colors.orange, size: 20),
                             SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Disconnect from VPN before changing settings',
+                                AppLocalizations.of(context)!.splitTunnelWarningConnected,
                                 style: TextStyle(color: Colors.orange, fontSize: 13),
                               ),
                             ),
@@ -605,20 +606,20 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                         ),
                       ),
                     Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'VPN Mode',
+                            AppLocalizations.of(context)!.splitTunnelVpnMode,
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
                                 ),
                           ),
-                          const SizedBox(height: 8),
+                          SizedBox(height: 8),
                           _buildModeCard(
-                            title: 'All traffic through VPN',
-                            subtitle: 'Exclusions will not go through VPN',
+                            title: AppLocalizations.of(context)!.splitTunnelModeGeneralTitle,
+                            subtitle: AppLocalizations.of(context)!.splitTunnelModeGeneralSubtitle,
                             icon: Icons.shield,
                             isSelected: _vpnMode == VpnMode.general,
                             enabled: !isConnected,
@@ -626,10 +627,10 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                               if (!isConnected) _setVpnMode(VpnMode.general);
                             },
                           ),
-                          const SizedBox(height: 8),
+                          SizedBox(height: 8),
                           _buildModeCard(
-                            title: 'Only selected traffic through VPN',
-                            subtitle: 'Only specified domains/apps through VPN',
+                            title: AppLocalizations.of(context)!.splitTunnelModeSelectiveTitle,
+                            subtitle: AppLocalizations.of(context)!.splitTunnelModeSelectiveSubtitle,
                             icon: Icons.filter_alt,
                             isSelected: _vpnMode == VpnMode.selective,
                             enabled: !isConnected,
@@ -648,12 +649,12 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
               controller: _tabController,
               tabs: [
                 Tab(
-                  icon: const Icon(Icons.language, size: 20),
-                  text: 'Domains ($_totalDomainCount)',
+                  icon: Icon(Icons.language, size: 20),
+                  text: AppLocalizations.of(context)!.splitTunnelDomainsTab(_totalDomainCount),
                 ),
                 Tab(
-                  icon: const Icon(Icons.apps, size: 20),
-                  text: 'Apps (${_apps.length})',
+                  icon: Icon(Icons.apps, size: 20),
+                  text: AppLocalizations.of(context)!.splitTunnelAppsTab(_apps.length),
                 ),
               ],
             ),
@@ -676,9 +677,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                     size: 16,
                     color: Theme.of(context).colorScheme.outline,
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6),
                   Text(
-                    'Settings are saved automatically',
+                    AppLocalizations.of(context)!.splitTunnelAutoSave,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.outline,
                     ),
@@ -753,19 +754,19 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
 
   Widget _buildDomainsTab(bool isConnected) {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             _vpnMode == VpnMode.general
-                ? 'Domains that will NOT go through VPN:'
-                : 'Domains that WILL go through VPN:',
+                ? AppLocalizations.of(context)!.splitTunnelDomainsExclude
+                : AppLocalizations.of(context)!.splitTunnelDomainsInclude,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
-            'Domains (google.com), IPs (8.8.8.8), CIDR (10.0.0.0/8)',
+            AppLocalizations.of(context)!.splitTunnelDomainsHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.outline,
                 ),
@@ -780,7 +781,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                   controller: _domainController,
                   enabled: !isConnected,
                   decoration: InputDecoration(
-                    hintText: 'Enter domain, IP or CIDR',
+                    hintText: AppLocalizations.of(context)!.splitTunnelDomainsInputHint,
                     prefixIcon: const Icon(Icons.add_link, size: 20),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     border: OutlineInputBorder(
@@ -811,9 +812,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                           size: 48,
                           color: Theme.of(context).colorScheme.outline,
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: 8),
                         Text(
-                          'No domains added',
+                          AppLocalizations.of(context)!.splitTunnelNoDomains,
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.outline,
                               ),
@@ -830,9 +831,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                       if (_standaloneDomains.isNotEmpty) ...[
                         if (_groups.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(top: 12, bottom: 4),
+                            padding: EdgeInsets.only(top: 12, bottom: 4),
                             child: Text(
-                              'Other',
+                              AppLocalizations.of(context)!.splitTunnelOther,
                               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                     color: Theme.of(context).colorScheme.outline,
                                   ),
@@ -902,19 +903,19 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
               children: [
                 TextButton.icon(
                   onPressed: isConnected ? null : () => _addDomainToGroup(group),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add'),
+                  icon: Icon(Icons.add, size: 18),
+                  label: Text(AppLocalizations.of(context)!.commonAdd),
                 ),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: isConnected ? null : () => _renameGroup(group),
-                  icon: const Icon(Icons.edit, size: 18),
-                  label: const Text('Name'),
+                  icon: Icon(Icons.edit, size: 18),
+                  label: Text(AppLocalizations.of(context)!.commonSave),
                 ),
                 TextButton.icon(
                   onPressed: isConnected ? null : () => _confirmDeleteGroup(group),
                   icon: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.error),
-                  label: Text('Delete', style: TextStyle(color: theme.colorScheme.error)),
+                  label: Text(AppLocalizations.of(context)!.commonDelete, style: TextStyle(color: theme.colorScheme.error)),
                 ),
               ],
             ),
@@ -928,19 +929,19 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete group?'),
-        content: Text('Group "${group.name}" and all its domains will be deleted.'),
+        title: Text(AppLocalizations.of(context)!.splitTunnelDeleteGroupTitle),
+        content: Text(AppLocalizations.of(context)!.splitTunnelDeleteGroupMessage(group.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)!.commonCancel),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _deleteGroup(group);
             },
-            child: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            child: Text(AppLocalizations.of(context)!.commonDelete, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         ],
       ),
@@ -983,30 +984,30 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(domain, style: const TextStyle(fontSize: 13)),
+                      child: Text(domain, style: TextStyle(fontSize: 13)),
                     ),
                     if (!isConnected) ...[
                       if (_groups.isNotEmpty)
                         PopupMenuButton<DomainGroup>(
-                          tooltip: 'Add to group',
-                          icon: const Icon(Icons.playlist_add, size: 18),
+                          tooltip: AppLocalizations.of(context)!.splitTunnelSuggestionAddToGroup,
+                          icon: Icon(Icons.playlist_add, size: 18),
                           itemBuilder: (context) => _groups
                               .map((g) => PopupMenuItem(
                                     value: g,
-                                    child: Text('To "${g.name}"'),
+                                    child: Text(AppLocalizations.of(context)!.splitTunnelToGroup(g.name)),
                                   ))
                               .toList(),
                           onSelected: (group) => _addSuggestionToGroup(domain, group),
                         ),
                       IconButton(
-                        icon: const Icon(Icons.add_circle_outline, size: 18),
-                        tooltip: 'Add standalone',
+                        icon: Icon(Icons.add_circle_outline, size: 18),
+                        tooltip: AppLocalizations.of(context)!.splitTunnelSuggestionAddStandalone,
                         onPressed: () => _addSuggestionToStandalone(domain),
                       ),
                     ],
                     IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      tooltip: 'Hide',
+                      icon: Icon(Icons.close, size: 18),
+                      tooltip: AppLocalizations.of(context)!.splitTunnelSuggestionHide,
                       onPressed: () => _dismissSuggestion(domain),
                     ),
                   ],
@@ -1018,9 +1019,8 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
   }
 
   String _pluralDomains(int count) {
-    return '\$count domain\${count == 1 ? "" : "s"}';
-    if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)) {
-    return '\$count domain\${count == 1 ? "" : "s"}';
+    return AppLocalizations.of(context)!.splitTunnelDomainCount(count);
+  }
 
   IconData _getDomainIcon(String domain) {
     if (domain.contains('/')) {
@@ -1042,21 +1042,21 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
           }).toList();
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             _vpnMode == VpnMode.general
-                ? 'Apps that will NOT use VPN:'
-                : 'Apps that WILL use VPN:',
+                ? AppLocalizations.of(context)!.splitTunnelAppsExclude
+                : AppLocalizations.of(context)!.splitTunnelAppsInclude,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           TextField(
             enabled: !isConnected,
             decoration: InputDecoration(
-              hintText: 'Search apps...',
+              hintText: AppLocalizations.of(context)!.splitTunnelSearchApps,
               prefixIcon: const Icon(Icons.search, size: 20),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               border: OutlineInputBorder(
@@ -1083,9 +1083,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                               size: 48,
                               color: Theme.of(context).colorScheme.outline,
                             ),
-                            const SizedBox(height: 8),
+                            SizedBox(height: 8),
                             Text(
-                              'No apps found',
+                              AppLocalizations.of(context)!.splitTunnelNoApps,
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                     color: Theme.of(context).colorScheme.outline,
                                   ),
@@ -1133,9 +1133,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                     size: 18,
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Text(
-                    'Selected apps: ${_apps.length}',
+                    AppLocalizations.of(context)!.splitTunnelSelectedApps(_apps.length),
                     style: TextStyle(
                       fontSize: 13,
                       color: Theme.of(context).colorScheme.onPrimaryContainer,
@@ -1216,18 +1216,18 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Add ${widget.domain}'),
+      title: Text(AppLocalizations.of(context)!.discoveryTitle(widget.domain)),
       content: SizedBox(
         width: 420,
         child: _isLoading
-            ? const Padding(
+            ? Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircularProgressIndicator(),
                     SizedBox(height: 16),
-                    Text('Searching for related domains...'),
+                    Text(AppLocalizations.of(context)!.discoverySearching),
                   ],
                 ),
               )
@@ -1238,14 +1238,14 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                   children: [
                     if (_discovered.isNotEmpty) ...[
                       Text(
-                        'Related domains found:',
+                        AppLocalizations.of(context)!.discoveryRelatedFound,
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
                       const SizedBox(height: 8),
                       TextField(
                         controller: _nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Group name',
+                        decoration: InputDecoration(
+                          labelText: AppLocalizations.of(context)!.discoveryGroupName,
                           prefixIcon: Icon(Icons.folder_outlined, size: 20),
                           isDense: true,
                         ),
@@ -1269,15 +1269,15 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                     ] else ...[
                       if (_error != null) ...[
                         Icon(Icons.info_outline, size: 32, color: Theme.of(context).colorScheme.outline),
-                        const SizedBox(height: 8),
+                        SizedBox(height: 8),
                       ],
                       Text(
-                        'No related domains found.',
+                        AppLocalizations.of(context)!.discoveryNoRelated,
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4),
                       Text(
-                        'Domain will be added standalone.',
+                        AppLocalizations.of(context)!.discoveryAddStandalone,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Theme.of(context).colorScheme.outline,
                             ),
@@ -1291,13 +1291,13 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
           ? [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(AppLocalizations.of(context)!.commonCancel),
               ),
             ]
           : [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(AppLocalizations.of(context)!.commonCancel),
               ),
               if (_discovered.isNotEmpty)
                 TextButton(
@@ -1309,7 +1309,7 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                       selectedDomains: [],
                     ),
                   ),
-                  child: const Text('Without group'),
+                  child: Text(AppLocalizations.of(context)!.discoveryWithoutGroup),
                 ),
               FilledButton(
                 onPressed: () {
@@ -1328,7 +1328,7 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                     ),
                   );
                 },
-                child: Text(_discovered.isNotEmpty ? 'Add group' : 'Add'),
+                child: Text(_discovered.isNotEmpty ? AppLocalizations.of(context)!.discoveryAddGroup : AppLocalizations.of(context)!.commonAdd),
               ),
             ],
     );

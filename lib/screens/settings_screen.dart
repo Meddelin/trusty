@@ -4,6 +4,7 @@ import '../models/server_config.dart';
 import '../models/vpn_status.dart';
 import '../services/config_service.dart';
 import '../services/vpn_service.dart';
+import '../l10n/app_localizations.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -21,6 +22,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _usernameController;
   late TextEditingController _passwordController;
   late TextEditingController _dnsController;
+  late TextEditingController _customSniController;
 
   bool _hasIpv6 = true;
   bool _skipVerification = false;
@@ -39,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _usernameController = TextEditingController();
     _passwordController = TextEditingController();
     _dnsController = TextEditingController();
+    _customSniController = TextEditingController();
 
     _loadConfig();
   }
@@ -54,6 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _usernameController.text = config.username;
       _passwordController.text = config.password;
       _dnsController.text = config.dns;
+      _customSniController.text = config.customSni;
       _hasIpv6 = config.hasIpv6;
       _skipVerification = config.skipVerification;
       _antiDpi = config.antiDpi;
@@ -81,6 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         antiDpi: _antiDpi,
         dns: _dnsController.text.trim(),
         logLevel: _logLevel,
+        customSni: _customSniController.text.trim(),
       );
 
       final configService = context.read<ConfigService>();
@@ -88,8 +93,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings saved'),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.settingsSaved),
             backgroundColor: Colors.green,
           ),
         );
@@ -98,7 +103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Save error: $e'),
+            content: Text(AppLocalizations.of(context)!.settingsSaveError(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -114,6 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     _dnsController.dispose();
+    _customSniController.dispose();
     super.dispose();
   }
 
@@ -145,13 +151,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.orange),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
                         Icon(Icons.warning_amber, color: Colors.orange),
                         SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Disconnect from VPN before changing settings',
+                            AppLocalizations.of(context)!.settingsWarningConnected,
                             style: TextStyle(color: Colors.orange),
                           ),
                         ),
@@ -160,44 +166,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
 
                 // Server Section
-                _buildSectionTitle('Server'),
+                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionServer),
                 _buildTextField(
                   controller: _hostnameController,
-                  label: 'Hostname',
+                  label: AppLocalizations.of(context)!.settingsHostname,
                   icon: Icons.dns,
                   enabled: !isConnected,
                   validator: (value) => value?.isEmpty ?? true
-                      ? 'Enter hostname'
+                      ? AppLocalizations.of(context)!.settingsHostnameError
                       : null,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
                       flex: 2,
                       child: _buildTextField(
                         controller: _addressController,
-                        label: 'IP Address',
+                        label: AppLocalizations.of(context)!.settingsAddress,
                         icon: Icons.public,
                         enabled: !isConnected,
                         validator: (value) => value?.isEmpty ?? true
-                            ? 'Enter IP address'
+                            ? AppLocalizations.of(context)!.settingsAddressError
                             : null,
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: 16),
                     Expanded(
                       child: _buildTextField(
                         controller: _portController,
-                        label: 'Port',
+                        label: AppLocalizations.of(context)!.settingsPort,
                         icon: Icons.pin,
                         enabled: !isConnected,
                         keyboardType: TextInputType.number,
                         validator: (value) {
-                          if (value?.isEmpty ?? true) return 'Enter port';
+                          if (value?.isEmpty ?? true) return AppLocalizations.of(context)!.settingsPortErrorEmpty;
                           final port = int.tryParse(value!);
                           if (port == null || port < 1 || port > 65535) {
-                            return 'Invalid port';
+                            return AppLocalizations.of(context)!.settingsPortErrorInvalid;
                           }
                           return null;
                         },
@@ -206,28 +212,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
 
                 // Authentication Section
-                _buildSectionTitle('Authentication'),
+                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionAuth),
                 _buildTextField(
                   controller: _usernameController,
-                  label: 'Username',
+                  label: AppLocalizations.of(context)!.settingsUsername,
                   icon: Icons.person,
                   enabled: !isConnected,
                   validator: (value) => value?.isEmpty ?? true
-                      ? 'Enter username'
+                      ? AppLocalizations.of(context)!.settingsUsernameError
                       : null,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 _buildTextField(
                   controller: _passwordController,
-                  label: 'Password',
+                  label: AppLocalizations.of(context)!.settingsPassword,
                   icon: Icons.lock,
                   enabled: !isConnected,
                   obscureText: !_passwordVisible,
                   validator: (value) => value?.isEmpty ?? true
-                      ? 'Enter password'
+                      ? AppLocalizations.of(context)!.settingsPasswordError
                       : null,
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -241,23 +247,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
 
                 // Network Section
-                _buildSectionTitle('Network'),
+                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionNetwork),
                 _buildTextField(
                   controller: _dnsController,
-                  label: 'DNS Server',
+                  label: AppLocalizations.of(context)!.settingsDns,
                   icon: Icons.router,
                   enabled: !isConnected,
                   validator: (value) => value?.isEmpty ?? true
-                      ? 'Enter DNS server'
+                      ? AppLocalizations.of(context)!.settingsDnsError
                       : null,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 _buildDropdown(
                   value: _upstreamProtocol,
-                  label: 'Protocol',
+                  label: AppLocalizations.of(context)!.settingsProtocol,
                   icon: Icons.settings_ethernet,
                   enabled: !isConnected,
                   items: const ['http2', 'http3'],
@@ -267,10 +273,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     });
                   },
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 _buildDropdown(
                   value: _logLevel,
-                  label: 'Log Level',
+                  label: AppLocalizations.of(context)!.settingsLogLevel,
                   icon: Icons.bug_report,
                   enabled: !isConnected,
                   items: const ['error', 'warn', 'info', 'debug', 'trace'],
@@ -281,12 +287,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
 
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
 
                 // Advanced Section
-                _buildSectionTitle('Advanced'),
+                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionAdvanced),
                 _buildSwitch(
-                  title: 'IPv6 Support',
+                  title: AppLocalizations.of(context)!.settingsIpv6,
                   value: _hasIpv6,
                   enabled: !isConnected,
                   onChanged: (value) {
@@ -296,7 +302,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
                 _buildSwitch(
-                  title: 'Skip Certificate Verification',
+                  title: AppLocalizations.of(context)!.settingsSkipVerification,
                   value: _skipVerification,
                   enabled: !isConnected,
                   onChanged: (value) {
@@ -306,7 +312,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
                 _buildSwitch(
-                  title: 'Anti-DPI',
+                  title: AppLocalizations.of(context)!.settingsAntiDpi,
                   value: _antiDpi,
                   enabled: !isConnected,
                   onChanged: (value) {
@@ -314,6 +320,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _antiDpi = value;
                     });
                   },
+                ),
+                SizedBox(height: 16),
+                _buildTextField(
+                  controller: _customSniController,
+                  label: 'Custom SNI (optional)',
+                  icon: Icons.security,
+                  enabled: !isConnected,
                 ),
 
                 const SizedBox(height: 32),
@@ -324,9 +337,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   height: 50,
                   child: ElevatedButton.icon(
                     onPressed: isConnected ? null : _saveConfig,
-                    icon: const Icon(Icons.save),
-                    label: const Text(
-                      'Save Settings',
+                    icon: Icon(Icons.save),
+                    label: Text(
+                      AppLocalizations.of(context)!.settingsSave,
                       style: TextStyle(fontSize: 16),
                     ),
                     style: ElevatedButton.styleFrom(

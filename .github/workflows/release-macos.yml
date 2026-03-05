@@ -4,9 +4,14 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - fix/macos-cli-auth
 
 permissions:
   contents: write
+
+env:
+  CLI_VERSION: "v1.0.19"
 
 jobs:
   build-macos:
@@ -19,6 +24,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.38.9"
           channel: "stable"
 
       - name: Verify Flutter installation
@@ -36,9 +42,9 @@ jobs:
         run: |
           echo "Downloading latest TrustTunnel CLI for macOS..."
 
-          # Get latest release info
-          API_URL="https://api.github.com/repos/TrustTunnel/TrustTunnelClient/releases/latest"
-          RELEASE_JSON=$(curl -fsSL "$API_URL")
+          # Get pinned CLI release
+          API_URL="https://api.github.com/repos/TrustTunnel/TrustTunnelClient/releases/tags/${CLI_VERSION}"
+          RELEASE_JSON=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "$API_URL")
 
           # Find macOS universal asset
           DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^"]*macos[^"]*universal[^"]*"' | head -1 | cut -d'"' -f4)
@@ -82,11 +88,13 @@ jobs:
 
           echo "CLI downloaded successfully: $(wc -c < client/trusttunnel_client) bytes"
           echo "$CLI_VERSION" > cli_version.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create release package
         run: |
           CLI_VERSION=$(cat cli_version.txt)
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME//\//-}"
 
           mkdir -p release-package/client
 
@@ -146,6 +154,7 @@ jobs:
           ls -la "${ARCHIVE_NAME}"
 
       - name: Create GitHub Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -166,7 +175,7 @@ jobs:
             ### Known Limitations
 
             - No code signing (Gatekeeper will block — use Right-click → Open)
-            - TUN creation may require sudo
+            - On first VPN connect, a macOS password dialog appears once to grant TUN access (no terminal needed)
             - Split tunnel app detection is best-effort
 
             ### Requirements
@@ -179,9 +188,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build artifacts
+        id: upload
+        run: |
+          SAFE_REF="${GITHUB_REF_NAME//\//-}"
+          echo "safe_ref=${SAFE_REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-build-${{ github.ref_name }}
+          name: macos-build-${{ steps.upload.outputs.safe_ref }}
           path: |
             Trusty-macOS-*.zip
           retention-days: 30
