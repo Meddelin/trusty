@@ -193,7 +193,7 @@ killswitch_allow_ports = []
 
 # When enabled, a post-quantum group may be used for key exchange
 # in TLS handshakes initiated by the VPN client.
-post_quantum_group_enabled = true
+post_quantum_group_enabled = false
 
 # Domains and addresses which should be routed in a special manner.
 # Supported syntax:
