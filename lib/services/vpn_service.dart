@@ -83,8 +83,9 @@ class VpnService extends ChangeNotifier {
         );
       }
 
-      // On macOS, the client needs root to open a TUN device.
-      // We use setuid: set it once via the macOS password dialog, then it works forever.
+      // On macOS, the client needs full root (sudo) to set up TUN routes.
+      // setuid is not enough — the client drops to the real uid when it shells
+      // out to `ifconfig`, so configure passwordless sudo once instead.
       if (Platform.isMacOS) {
         await _ensureMacOSPrivileges(exePath);
       }
@@ -104,9 +105,15 @@ class VpnService extends ChangeNotifier {
       }
 
       try {
+        // macOS runs the client through sudo (full root); the setuid path is
+        // insufficient. Other platforms launch the binary directly.
+        final launchExe = Platform.isMacOS ? 'sudo' : exePath;
+        final launchArgs = Platform.isMacOS
+            ? ['-n', exePath, '--config', configPath, '--loglevel', config.logLevel]
+            : ['--config', configPath, '--loglevel', config.logLevel];
         _process = await Process.start(
-          exePath,
-          ['--config', configPath, '--loglevel', config.logLevel],
+          launchExe,
+          launchArgs,
           runInShell: false,
         );
 
@@ -366,30 +373,35 @@ class VpnService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Check whether the binary already has the setuid bit set (macOS).
-  Future<bool> _hasMacOSSetuid(String exePath) async {
-    final result = await Process.run('stat', ['-f', '%Sp', exePath]);
-    // e.g. "-rwsr-xr-x" — 's' in owner-execute position means setuid
-    return result.exitCode == 0 &&
-        result.stdout.toString().trim().length > 3 &&
-        result.stdout.toString().trim()[3] == 's';
+  /// Check whether passwordless sudo is already configured for the binary (macOS).
+  Future<bool> _hasSudoNopasswd(String exePath) async {
+    // `sudo -n` fails fast (non-zero) if a password would be required, so this
+    // returns true only when the NOPASSWD rule is in place for this binary.
+    final result = await Process.run('sudo', ['-n', exePath, '--version']);
+    return result.exitCode == 0;
   }
 
-  /// Ensure the client binary has the setuid bit. If not, prompt the user
-  /// via the standard macOS password dialog (osascript) and set it.
+  /// Ensure passwordless sudo is configured for the client binary. If not,
+  /// prompt once via the macOS password dialog (osascript) and write a
+  /// NOPASSWD sudoers rule for this exact binary path, validated by visudo.
   Future<void> _ensureMacOSPrivileges(String exePath) async {
-    if (await _hasMacOSSetuid(exePath)) return;
+    if (await _hasSudoNopasswd(exePath)) return;
 
     _addLog('🔐 One-time setup: requesting administrator access to enable VPN tunnel...');
 
-    final escapedPath = exePath.replaceAll('"', '\\"');
-    final result = await Process.run(
-      'osascript',
-      ['-e', 'do shell script "chmod u+s \\"$escapedPath\\"" with administrator privileges'],
-    );
+    final user = Platform.environment['USER'] ?? '';
+    final rule = '$user ALL=(ALL) NOPASSWD: $exePath';
+    // Write the rule to /etc/sudoers.d/trusty, lock its perms, and validate it
+    // with visudo before it can take effect (a bad sudoers file is dangerous).
+    final inner =
+        "echo '$rule' > /etc/sudoers.d/trusty && chmod 440 /etc/sudoers.d/trusty && visudo -cf /etc/sudoers.d/trusty";
+    final osaArg =
+        'do shell script "${inner.replaceAll('"', '\\"')}" with administrator privileges';
+
+    final result = await Process.run('osascript', ['-e', osaArg]);
 
     if (result.exitCode != 0) {
-      // User cancelled or wrong password
+      // User cancelled, wrong password, or sudoers validation failed.
       throw Exception('Administrator access is required to create a VPN tunnel.\nPlease try again and enter your Mac password when prompted.');
     }
 
