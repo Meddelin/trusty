@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +8,7 @@ import '../utils/localization_helper.dart';
 import '../models/domain_group.dart';
 
 /// Service for managing application configuration
-class ConfigService {
+class ConfigService extends ChangeNotifier {
   static const String _configKey = 'server_config';
   static const String _domainGroupsKey = 'domain_groups';
   static const String _configFileName = 'trusttunnel_client.toml';
@@ -38,6 +39,7 @@ class ConfigService {
       print('Saving config - vpnMode: ${json['vpnMode']}, domains: ${json['splitTunnelDomains']}, apps: ${json['splitTunnelApps']}');
       final jsonString = jsonEncode(json);
       await prefs.setString(_configKey, jsonString);
+      notifyListeners();
     } catch (e) {
       print('Error saving config: $e');
       rethrow;

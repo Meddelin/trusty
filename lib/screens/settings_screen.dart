@@ -33,6 +33,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _passwordVisible = false;
   bool _isLoading = true;
 
+  late ConfigService _configService;
+
   @override
   void initState() {
     super.initState();
@@ -44,12 +46,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _dnsController = TextEditingController();
     _customSniController = TextEditingController();
 
+    _configService = context.read<ConfigService>();
+    _configService.addListener(_onConfigChanged);
     _loadConfig();
   }
 
+  void _onConfigChanged() {
+    if (mounted) {
+      _loadConfig();
+    }
+  }
+
   Future<void> _loadConfig() async {
-    final configService = context.read<ConfigService>();
-    final config = await configService.loadConfig();
+    final config = await _configService.loadConfig();
 
     setState(() {
       _hostnameController.text = config.hostname;
@@ -91,8 +100,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         customSni: _customSniController.text.trim(),
       );
 
-      final configService = context.read<ConfigService>();
-      await configService.saveConfig(config);
+      await _configService.saveConfig(config);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -116,6 +124,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    _configService.removeListener(_onConfigChanged);
     _hostnameController.dispose();
     _addressController.dispose();
     _portController.dispose();
