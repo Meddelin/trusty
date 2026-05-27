@@ -115,19 +115,23 @@ jobs:
 
           # Create README
           cat > release-package/README.txt << EOF
-          # Trusty - macOS Client (Alpha)
+          ## Trusty v0.3.0: One-Click Server Deployment 🚀 (macOS Alpha)
 
-          ## What's Included
+          ### ✨ New Major Feature
+          - **Deploy your own VPN server directly from the app!** Enter your VPS details in the "Server" tab, and Trusty will automatically connect, install the latest TrustTunnel service, configure certificates, bypass busy ports, and seamlessly apply the settings to your client—all in one click!
 
-          This release includes TrustTunnel CLI ($CLI_VERSION) pre-bundled.
+          ### ✨ What's Included
 
-          ## Quick Start
+          ✅ **TrustTunnel CLI ($CLI_VERSION) is pre-bundled!**
+          No separate downloads needed - everything works out of the box.
 
-          1. Extract the ZIP file
-          2. Move the .app to /Applications (optional)
-          3. Place the client/ folder next to the .app
-          4. Right-click the .app → Open (first time, to bypass Gatekeeper)
-          5. Configure your server in Settings tab
+          ### Installation
+
+          1. Download the ZIP file below
+          2. Extract Trusty.app to /Applications
+          3. Place the client/ folder next to it
+          4. Right-click and choose Open
+          5. Install a server or configure an existing one
           6. Click Connect!
 
           ## Alpha Notice
