@@ -15,30 +15,30 @@ When a `v*` tag is pushed, two workflows are triggered automatically:
 
 ```yaml
 # pubspec.yaml
-version: 0.1.0+1
+version: 0.3.0+1
 ```
 
 ### 2. Commit and Push
 
 ```bash
 git add pubspec.yaml
-git commit -m "Bump version to 0.1.0"
+git commit -m "Bump version to 0.3.0"
 git push origin main
 ```
 
 ### 3. Create Tag
 
 ```bash
-git tag -a v0.1.0 -m "v0.1.0: description"
-git push origin v0.1.0
+git tag -a v0.3.0 -m "v0.3.0: description"
+git push origin v0.3.0
 ```
 
 ### 4. Done
 
 - GitHub Actions builds both platforms (3-5 minutes)
 - Releases appear on [Releases](../../releases)
-- Windows: `Trusty-Windows-v0.1.0.zip` (stable)
-- macOS: `Trusty-macOS-v0.1.0.zip` (prerelease)
+- Windows: `Trusty-Windows-v0.3.0.zip` (stable)
+- macOS: `Trusty-macOS-v0.3.0.zip` (prerelease)
 
 ## What Happens During Build
 
@@ -63,14 +63,14 @@ git push origin v0.1.0
 
 [Semantic Versioning](https://semver.org/):
 
-- `MAJOR.MINOR.PATCH` — `0.1.0`
+- `MAJOR.MINOR.PATCH` — `0.3.0`
 - MAJOR — incompatible changes
 - MINOR — new features
 - PATCH — bug fixes
 
 Examples:
 ```
-v0.1.0 — first release
+v0.3.0 — stable release with auto deployment
 v1.0.0 — stable release
 ```
 
@@ -86,8 +86,8 @@ v1.0.0 — stable release
 
 ```bash
 # Delete tag
-git tag -d v0.1.0
-git push origin :refs/tags/v0.1.0
+git tag -d v0.3.0
+git push origin :refs/tags/v0.3.0
 ```
 
 Then delete the release on GitHub → Releases → Delete release.
