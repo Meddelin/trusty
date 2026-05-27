@@ -604,6 +604,18 @@ abstract class AppLocalizations {
   /// **'Anti-DPI'**
   String get settingsAntiDpi;
 
+  /// No description provided for @settingsPostQuantum.
+  ///
+  /// In en, this message translates to:
+  /// **'Post-Quantum Key Exchange'**
+  String get settingsPostQuantum;
+
+  /// No description provided for @settingsCustomSni.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom SNI (optional)'**
+  String get settingsCustomSni;
+
   /// No description provided for @settingsSave.
   ///
   /// In en, this message translates to:

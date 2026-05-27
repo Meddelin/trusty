@@ -279,6 +279,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsAntiDpi => 'Anti-DPI';
 
   @override
+  String get settingsPostQuantum => 'Post-Quantum Key Exchange';
+
+  @override
+  String get settingsCustomSni => 'Custom SNI (optional)';
+
+  @override
   String get settingsSave => 'Save Settings';
 
   @override

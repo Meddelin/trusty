@@ -99,6 +99,8 @@
   "settingsIpv6": "IPv6 Support",
   "settingsSkipVerification": "Skip Certificate Verification",
   "settingsAntiDpi": "Anti-DPI",
+  "settingsPostQuantum": "Post-Quantum Key Exchange",
+  "settingsCustomSni": "Custom SNI (optional)",
   "settingsSave": "Save Settings",
   "settingsSaved": "Settings saved",
   "settingsSaveError": "Save error: {error}",

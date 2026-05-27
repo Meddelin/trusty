@@ -16,11 +16,11 @@ class ServerConfig {
   final String password;
   final bool skipVerification;
   final String upstreamProtocol;
-  final String upstreamFallbackProtocol;
   final bool antiDpi;
   final String dns;
   final String logLevel;
   final String customSni;
+  final bool postQuantumGroupEnabled;
 
   // Split tunneling settings
   final VpnMode vpnMode;
@@ -36,11 +36,11 @@ class ServerConfig {
     required this.password,
     this.skipVerification = false,
     this.upstreamProtocol = 'http2',
-    this.upstreamFallbackProtocol = '',
     this.antiDpi = false,
     this.dns = '8.8.8.8',
     this.logLevel = 'info',
     this.customSni = '',
+    this.postQuantumGroupEnabled = true,
     this.vpnMode = VpnMode.general,
     this.splitTunnelDomains = const [],
     this.splitTunnelApps = const [],
@@ -58,11 +58,11 @@ class ServerConfig {
       password: '',
       skipVerification: false,
       upstreamProtocol: 'http2',
-      upstreamFallbackProtocol: '',
       antiDpi: false,
       dns: '8.8.8.8',
       logLevel: 'info',
       customSni: '',
+      postQuantumGroupEnabled: true,
       vpnMode: VpnMode.general,
       splitTunnelDomains: [],
       splitTunnelApps: [],
@@ -80,11 +80,11 @@ class ServerConfig {
       'password': password,
       'skipVerification': skipVerification,
       'upstreamProtocol': upstreamProtocol,
-      'upstreamFallbackProtocol': upstreamFallbackProtocol,
       'antiDpi': antiDpi,
       'dns': dns,
       'logLevel': logLevel,
       'customSni': customSni,
+      'postQuantumGroupEnabled': postQuantumGroupEnabled,
       'vpnMode': vpnMode.name,
       'splitTunnelDomains': splitTunnelDomains,
       'splitTunnelApps': splitTunnelApps,
@@ -99,10 +99,10 @@ class ServerConfig {
     final username = json['username'] as String? ?? 'your-username';
     final password = json['password'] as String? ?? '';
     final upstreamProtocol = json['upstreamProtocol'] as String? ?? 'http2';
-    final upstreamFallbackProtocol = json['upstreamFallbackProtocol'] as String? ?? '';
     final dns = json['dns'] as String? ?? '8.8.8.8';
     final logLevel = json['logLevel'] as String? ?? 'info';
     final customSni = json['customSni'] as String? ?? '';
+    final postQuantumGroupEnabled = json['postQuantumGroupEnabled'] as bool? ?? true;
 
     return ServerConfig(
       hostname: hostname,
@@ -113,11 +113,11 @@ class ServerConfig {
       password: password,
       skipVerification: json['skipVerification'] as bool? ?? false,
       upstreamProtocol: upstreamProtocol,
-      upstreamFallbackProtocol: upstreamFallbackProtocol,
       antiDpi: json['antiDpi'] as bool? ?? false,
       dns: dns,
       logLevel: logLevel,
       customSni: customSni,
+      postQuantumGroupEnabled: postQuantumGroupEnabled,
       vpnMode: VpnMode.values.firstWhere(
         (e) => e.name == json['vpnMode'],
         orElse: () => VpnMode.general,
@@ -168,8 +168,8 @@ class ServerConfig {
     final pwd = password;
     final skipVerif = skipVerification;
     final upProto = upstreamProtocol;
-    final upFallback = upstreamFallbackProtocol;
     final dpi = antiDpi;
+    final pqg = postQuantumGroupEnabled;
 
     return '''# Logging level [info, debug, trace]
 loglevel = "$ll"
@@ -193,7 +193,7 @@ killswitch_allow_ports = []
 
 # When enabled, a post-quantum group may be used for key exchange
 # in TLS handshakes initiated by the VPN client.
-post_quantum_group_enabled = false
+post_quantum_group_enabled = $pqg
 
 # Domains and addresses which should be routed in a special manner.
 # Supported syntax:
@@ -231,7 +231,7 @@ username = "$u"
 # Password for authorization
 password = "$pwd"
 # TLS client random prefix and mask (hex string, format: prefix[/mask])
-client_random = ""
+client_random_prefix = ""
 # Skip the endpoint certificate verification?
 # That is, any certificate is accepted with this one set to true.
 skip_verification = $skipVerif
@@ -240,8 +240,6 @@ skip_verification = $skipVerif
 certificate = ""
 # Protocol to be used to communicate with the endpoint [http2, http3]
 upstream_protocol = "$upProto"
-# Fallback protocol to be used in case the main one fails [<none>, http2, http3]
-upstream_fallback_protocol = "$upFallback"
 # Is anti-DPI measures should be enabled
 anti_dpi = $dpi
 # Custom SNI value for TLS handshake (leave empty to use hostname)
@@ -281,11 +279,11 @@ change_system_dns = true
     String? password,
     bool? skipVerification,
     String? upstreamProtocol,
-    String? upstreamFallbackProtocol,
     bool? antiDpi,
     String? dns,
     String? logLevel,
     String? customSni,
+    bool? postQuantumGroupEnabled,
     VpnMode? vpnMode,
     List<String>? splitTunnelDomains,
     List<String>? splitTunnelApps,
@@ -299,12 +297,11 @@ change_system_dns = true
       password: password ?? this.password,
       skipVerification: skipVerification ?? this.skipVerification,
       upstreamProtocol: upstreamProtocol ?? this.upstreamProtocol,
-      upstreamFallbackProtocol:
-          upstreamFallbackProtocol ?? this.upstreamFallbackProtocol,
       antiDpi: antiDpi ?? this.antiDpi,
       dns: dns ?? this.dns,
       logLevel: logLevel ?? this.logLevel,
       customSni: customSni ?? this.customSni,
+      postQuantumGroupEnabled: postQuantumGroupEnabled ?? this.postQuantumGroupEnabled,
       vpnMode: vpnMode ?? this.vpnMode,
       splitTunnelDomains: splitTunnelDomains ?? this.splitTunnelDomains,
       splitTunnelApps: splitTunnelApps ?? this.splitTunnelApps,

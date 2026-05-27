@@ -565,7 +565,10 @@ class _MainScreenState extends State<MainScreen>
 
           // Main content
           Expanded(
-            child: _screens[_selectedIndex],
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: _screens,
+            ),
           ),
         ],
       ),
