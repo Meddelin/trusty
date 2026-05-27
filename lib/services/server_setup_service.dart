@@ -111,7 +111,7 @@ class ServerSetupService extends ChangeNotifier {
       await _stepConnect(config);
 
       // Step 2: Check system
-      await _stepCheckSystem();
+      await _stepCheckSystem(config);
 
       // Step 3: Install TrustTunnel
       await _stepInstall();
@@ -172,7 +172,7 @@ class ServerSetupService extends ChangeNotifier {
     _addLog('SSH connection established');
   }
 
-  Future<void> _stepCheckSystem() async {
+  Future<void> _stepCheckSystem(ServerSetupConfig config) async {
     _setStep(SetupStep.checkingSystem);
 
     // Check architecture
@@ -206,14 +206,47 @@ class ServerSetupService extends ChangeNotifier {
       _addLog('Installing curl...');
       await _runCommand('apt-get update -qq && apt-get install -y -qq curl');
     }
+
+    // Check if VPN listen port is already in use and auto-pick if necessary
+    _addLog('Checking if port ${config.listenPort} is available...');
+    if (!_alreadyInstalled) {
+      bool portFound = false;
+      int currentPort = config.listenPort;
+      int attempts = 0;
+
+      while (!portFound && attempts < 10) {
+        try {
+          final portCheck = await _runCommand('ss -tuln | grep ":$currentPort " || true');
+          if (portCheck.trim().isEmpty) {
+            portFound = true;
+            if (currentPort != config.listenPort) {
+              _addLog('Port ${config.listenPort} is busy. Automatically selected port $currentPort.');
+              config.listenPort = currentPort;
+            } else {
+              _addLog('Port $currentPort is available.');
+            }
+          } else {
+            currentPort = currentPort == 443 ? 8443 : currentPort + 1;
+            attempts++;
+          }
+        } catch (e) {
+          // If ss fails, we assume port is available to not block installation
+          portFound = true; 
+        }
+      }
+
+      if (!portFound) {
+        throw Exception('Could not find an available port. Original requested port: ${config.listenPort}');
+      }
+    }
   }
 
   Future<void> _stepInstall() async {
     _setStep(SetupStep.installing);
-    _addLog('Downloading and installing Trusty...');
+    _addLog('Downloading and installing TrustTunnel (latest)...');
 
     await _runCommand(
-      'curl -fsSL https://raw.githubusercontent.com/TrustTunnel/TrustTunnel/refs/heads/master/scripts/install.sh | sh -s -',
+      'curl -fsSL https://raw.githubusercontent.com/TrustTunnel/TrustTunnel/refs/heads/master/scripts/install.sh | sh -s -- -a y',
     );
 
     // Verify installation
@@ -274,18 +307,38 @@ class ServerSetupService extends ChangeNotifier {
       );
     }
 
-    // Free port 80 if occupied
-    try {
-      await _runCommand(
-          'fuser -k 80/tcp 2>/dev/null || true');
-    } catch (_) {}
+    // Removed fuser -k 80/tcp to avoid killing existing web servers.
+    // If port 80 is occupied, certbot standalone will fail gracefully.
 
     // Obtain certificate
     _addLog('Requesting certificate for ${config.domain}...');
-    await _runCommand(
-      'certbot certonly --non-interactive --standalone '
-      '--agree-tos -m ${config.email} -d ${config.domain}',
-    );
+    try {
+      await _runCommand(
+        'certbot certonly --non-interactive --standalone '
+        '--agree-tos -m ${config.email} -d ${config.domain}',
+      );
+    } catch (e) {
+      if (e.toString().contains('TCP port 80') || e.toString().contains('already in use')) {
+        _addLog('Port 80 is busy. Attempting to use Nginx/Apache plugin...');
+        try {
+          await _runCommand('apt-get install -y -qq python3-certbot-nginx python3-certbot-apache || true');
+          await _runCommand(
+            'certbot certonly --non-interactive --nginx '
+            '--agree-tos -m ${config.email} -d ${config.domain} || '
+            'certbot certonly --non-interactive --apache '
+            '--agree-tos -m ${config.email} -d ${config.domain}'
+          );
+        } catch (e2) {
+          throw Exception('Failed to obtain certificate because port 80 is busy and Nginx/Apache auto-config failed.\n'
+              'If you already have a certificate, please manually copy it to:\n'
+              '/etc/letsencrypt/live/${config.domain}/fullchain.pem\n'
+              '/etc/letsencrypt/live/${config.domain}/privkey.pem\n'
+              'and re-run the installation.');
+        }
+      } else {
+        rethrow;
+      }
+    }
 
     // Verify cert exists
     await _runCommand(
@@ -316,15 +369,18 @@ class ServerSetupService extends ChangeNotifier {
     // Wait for service to start
     await Future.delayed(const Duration(seconds: 3));
 
-    final status = await _runCommand('systemctl is-active trusttunnel');
-    if (status.trim() == 'active') {
-      _addLog('Trusty service is running!');
-    } else {
+    try {
+      final status = await _runCommand('systemctl is-active trusttunnel');
+      if (status.trim() == 'active') {
+        _addLog('Trusty service is running!');
+      }
+    } catch (e) {
+      // systemctl is-active returns non-zero if not active, causing _runCommand to throw.
       // Get journal logs for debugging
       final journal = await _runCommand(
           'journalctl -u trusttunnel --no-pager -n 20 2>/dev/null || true');
       throw Exception(
-          'Service failed to start (status: $status)\n\nLogs:\n$journal');
+          'Service failed to start.\n\nLogs:\n$journal\n\nOriginal error: $e');
     }
   }
 

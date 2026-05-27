@@ -62,7 +62,7 @@ flutter build macos --release     # macOS
 
 The GUI is a wrapper around the CLI. You need to download the CLI binary separately.
 
-The latest tested CLI version is **v1.0.19** from [TrustTunnelClient releases](https://github.com/TrustTunnel/TrustTunnelClient/releases).
+The latest tested CLI version is **v1.0.49** from [TrustTunnelClient releases](https://github.com/TrustTunnel/TrustTunnelClient/releases).
 
 ### Windows
 

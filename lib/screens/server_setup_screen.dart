@@ -24,9 +24,17 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
   final _sshPortController = TextEditingController(text: '22');
   final _sshUserController = TextEditingController(text: 'root');
   final _sshPasswordController = TextEditingController();
-  final _sshKeyPathController = TextEditingController();
+  late final TextEditingController _sshKeyPathController;
   bool _useKeyAuth = false;
   bool _sshPasswordVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final homeDir = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '~';
+    final slash = Platform.isWindows ? '\\' : '/';
+    _sshKeyPathController = TextEditingController(text: '$homeDir$slash.ssh${slash}id_ed25519');
+  }
 
   // Server / TLS
   final _domainController = TextEditingController();

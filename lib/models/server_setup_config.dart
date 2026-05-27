@@ -64,7 +64,8 @@ class ServerSetupConfig {
   /// Generate vpn.toml content
   String generateVpnToml() {
     return 'listen_address = "0.0.0.0:$listenPort"\n'
-        'credentials_file = "/opt/trusttunnel/credentials.toml"\n';
+        'credentials_file = "/opt/trusttunnel/credentials.toml"\n\n'
+        '[listen_protocols.http1]\n';
   }
 
   /// Generate credentials.toml content

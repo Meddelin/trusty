@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 env:
-  CLI_VERSION: "v1.0.19"
+  CLI_VERSION: "v1.0.49"
 
 jobs:
   build-macos:

@@ -27,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hasIpv6 = true;
   bool _skipVerification = false;
   bool _antiDpi = false;
+  bool _postQuantumGroupEnabled = true;
   String _upstreamProtocol = 'http2';
   String _logLevel = 'info';
   bool _passwordVisible = false;
@@ -61,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _hasIpv6 = config.hasIpv6;
       _skipVerification = config.skipVerification;
       _antiDpi = config.antiDpi;
+      _postQuantumGroupEnabled = config.postQuantumGroupEnabled;
       _upstreamProtocol = config.upstreamProtocol;
       _logLevel = config.logLevel;
       _isLoading = false;
@@ -83,6 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         skipVerification: _skipVerification,
         upstreamProtocol: _upstreamProtocol,
         antiDpi: _antiDpi,
+        postQuantumGroupEnabled: _postQuantumGroupEnabled,
         dns: _dnsController.text.trim(),
         logLevel: _logLevel,
         customSni: _customSniController.text.trim(),
@@ -321,10 +324,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     });
                   },
                 ),
+                _buildSwitch(
+                  title: AppLocalizations.of(context)!.settingsPostQuantum,
+                  value: _postQuantumGroupEnabled,
+                  enabled: !isConnected,
+                  onChanged: (value) {
+                    setState(() {
+                      _postQuantumGroupEnabled = value;
+                    });
+                  },
+                ),
                 SizedBox(height: 16),
                 _buildTextField(
                   controller: _customSniController,
-                  label: 'Custom SNI (optional)',
+                  label: AppLocalizations.of(context)!.settingsCustomSni,
                   icon: Icons.security,
                   enabled: !isConnected,
                 ),

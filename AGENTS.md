@@ -142,7 +142,7 @@ Both download the **latest** CLI from [TrustTunnelClient releases](https://githu
 
 ## Upstream
 
-- TrustTunnel Client: https://github.com/TrustTunnel/TrustTunnelClient (latest tested: v1.0.19)
+- TrustTunnel Client: https://github.com/TrustTunnel/TrustTunnelClient (latest tested: v1.0.49)
 - TrustTunnel Server: https://github.com/TrustTunnel/TrustTunnel
 - License: Apache 2.0
 - Platforms: Windows, Linux, macOS (universal)
