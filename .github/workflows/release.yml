@@ -40,12 +40,15 @@ jobs:
         run: flutter build windows --release
 
       - name: Download TrustTunnel CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Write-Host "Downloading latest TrustTunnel CLI..."
 
           # Get pinned CLI release from TrustTunnelClient
           $apiUrl = "https://api.github.com/repos/TrustTunnel/TrustTunnelClient/releases/tags/$env:CLI_VERSION"
-          $release = Invoke-RestMethod -Uri $apiUrl
+          $headers = @{ "Authorization" = "Bearer $env:GITHUB_TOKEN" }
+          $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers
 
           # Find Windows x64 asset
           $asset = $release.assets | Where-Object { $_.name -like "*windows*x86_64*" -or $_.name -like "*windows*amd64*" } | Select-Object -First 1
