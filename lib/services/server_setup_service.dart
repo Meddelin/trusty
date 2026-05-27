@@ -209,35 +209,38 @@ class ServerSetupService extends ChangeNotifier {
 
     // Check if VPN listen port is already in use and auto-pick if necessary
     _addLog('Checking if port ${config.listenPort} is available...');
-    if (!_alreadyInstalled) {
-      bool portFound = false;
-      int currentPort = config.listenPort;
-      int attempts = 0;
+    
+    if (_alreadyInstalled) {
+      await _runCommand('systemctl stop trusttunnel || true');
+    }
 
-      while (!portFound && attempts < 10) {
-        try {
-          final portCheck = await _runCommand('ss -tuln | grep ":$currentPort " || true');
-          if (portCheck.trim().isEmpty) {
-            portFound = true;
-            if (currentPort != config.listenPort) {
-              _addLog('Port ${config.listenPort} is busy. Automatically selected port $currentPort.');
-              config.listenPort = currentPort;
-            } else {
-              _addLog('Port $currentPort is available.');
-            }
+    bool portFound = false;
+    int currentPort = config.listenPort;
+    int attempts = 0;
+
+    while (!portFound && attempts < 10) {
+      try {
+        final portCheck = await _runCommand('ss -tuln | grep ":$currentPort " || true');
+        if (portCheck.trim().isEmpty) {
+          portFound = true;
+          if (currentPort != config.listenPort) {
+            _addLog('Port ${config.listenPort} is busy. Automatically selected port $currentPort.');
+            config.listenPort = currentPort;
           } else {
-            currentPort = currentPort == 443 ? 8443 : currentPort + 1;
-            attempts++;
+            _addLog('Port $currentPort is available.');
           }
-        } catch (e) {
-          // If ss fails, we assume port is available to not block installation
-          portFound = true; 
+        } else {
+          currentPort = currentPort == 443 ? 8443 : currentPort + 1;
+          attempts++;
         }
+      } catch (e) {
+        // If ss fails, we assume port is available to not block installation
+        portFound = true; 
       }
-
-      if (!portFound) {
-        throw Exception('Could not find an available port. Original requested port: ${config.listenPort}');
-      }
+    }   
+    
+    if (!portFound) {
+      throw Exception('Could not find an available port. Original requested port: ${config.listenPort}');
     }
   }
 
