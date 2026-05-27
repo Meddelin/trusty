@@ -40,6 +40,8 @@ jobs:
         run: flutter build macos --release
 
       - name: Download TrustTunnel CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Downloading latest TrustTunnel CLI for macOS..."
 
