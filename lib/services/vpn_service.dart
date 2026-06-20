@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/server_config.dart';
 import '../models/vpn_status.dart';
+import '../utils/windows_short_path.dart';
 import 'config_service.dart';
 
 /// Service for managing VPN connection
@@ -105,16 +106,26 @@ class VpnService extends ChangeNotifier {
       }
 
       try {
+        // The CLI can't start when its exe/config path contains non-ASCII
+        // characters (e.g. a Cyrillic install dir). On Windows, pass the 8.3
+        // short paths (always ASCII); no-op everywhere else.
+        final shortExe = toShortPathName(exePath);
+        final shortConfig = toShortPathName(configPath);
+        final workDir = Platform.isWindows
+            ? toShortPathName(await _configService.getClientDirectory())
+            : null;
+
         // macOS runs the client through sudo (full root); the setuid path is
         // insufficient. Other platforms launch the binary directly.
-        final launchExe = Platform.isMacOS ? 'sudo' : exePath;
+        final launchExe = Platform.isMacOS ? 'sudo' : shortExe;
         final launchArgs = Platform.isMacOS
             ? ['-n', exePath, '--config', configPath, '--loglevel', config.logLevel]
-            : ['--config', configPath, '--loglevel', config.logLevel];
+            : ['--config', shortConfig, '--loglevel', config.logLevel];
         _process = await Process.start(
           launchExe,
           launchArgs,
           runInShell: false,
+          workingDirectory: workDir,
         );
 
         if (kDebugMode) {

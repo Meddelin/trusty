@@ -7,6 +7,7 @@ import '../models/vpn_status.dart';
 import '../services/config_service.dart';
 import '../services/vpn_service.dart';
 import '../services/domain_discovery_service.dart';
+import '../utils/exclusion_parser.dart';
 import '../l10n/app_localizations.dart';
 
 class SplitTunnelScreen extends StatefulWidget {
@@ -414,6 +415,79 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     _saveConfig();
   }
 
+  /// Bulk-import a pasted list of domains/IPs/CIDRs straight into the
+  /// standalone list, skipping the per-domain discovery dialog.
+  Future<void> _importDomainList() async {
+    final controller = TextEditingController();
+    final raw = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Paste list'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'One domain, IP or CIDR per line (commas and spaces also work):',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                minLines: 6,
+                maxLines: 14,
+                decoration: const InputDecoration(
+                  hintText: '92.255.112.0/20\nalfa.bank\nvk.com\nya.ru',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(AppLocalizations.of(context)!.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: Text(AppLocalizations.of(context)!.commonAdd),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (raw == null) return;
+
+    final existing = _getAllCurrentDomains();
+    final toAdd = parseExclusionList(raw)
+        .where((d) => !existing.contains(d.toLowerCase()))
+        .toList();
+
+    if (toAdd.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nothing new to add')),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _standaloneDomains.addAll(toAdd);
+    });
+    _saveConfig();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Added ${toAdd.length} entries')),
+      );
+    }
+  }
+
   void _addDomainToGroup(DomainGroup group) async {
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -795,6 +869,12 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
               IconButton.filled(
                 onPressed: isConnected ? null : _addDomainWithDiscovery,
                 icon: const Icon(Icons.add),
+              ),
+              const SizedBox(width: 8),
+              IconButton.outlined(
+                onPressed: isConnected ? null : _importDomainList,
+                tooltip: 'Paste a list',
+                icon: const Icon(Icons.content_paste),
               ),
             ],
           ),

@@ -46,6 +46,9 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
   final _vpnPasswordController = TextEditingController();
   bool _vpnPasswordVisible = false;
 
+  // Connection filtering (TLS client_random_prefix)
+  bool _generatePrefix = false;
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -83,6 +86,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
       listenPort: int.tryParse(_listenPortController.text.trim()) ?? 443,
       vpnUsername: _vpnUsernameController.text.trim(),
       vpnPassword: _vpnPasswordController.text,
+      generateClientRandomPrefix: _generatePrefix,
     );
   }
 
@@ -92,7 +96,34 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
     final service = context.read<ServerSetupService>();
     final config = _buildConfig();
 
-    await service.installAndRemember(config);
+    await service.installAndRemember(config, confirmReplace: _confirmReplace);
+  }
+
+  /// Shown when the server already has TrustTunnel installed.
+  Future<bool> _confirmReplace() async {
+    if (!mounted) return false;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('TrustTunnel already installed'),
+        content: const Text(
+          'An existing TrustTunnel installation was found on this server. '
+          'Continuing will stop it and overwrite its configuration '
+          '(vpn.toml, credentials, hosts, rules). Replace it?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep existing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   Future<void> _applyToClient() async {
@@ -309,6 +340,26 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                       ),
                     ),
                   ],
+                ),
+
+                SizedBox(height: 24),
+
+                // Security Section
+                _buildSectionTitle('Security'),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable connection filtering'),
+                  subtitle: const Text(
+                    'Generates a secret TLS client random prefix so the server '
+                    'answers only this client and ignores probes/scanners. '
+                    'Auto-filled into your client settings on "Apply".',
+                  ),
+                  value: _generatePrefix,
+                  onChanged:
+                      isRunning ? null : (v) => setState(() => _generatePrefix = v),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
 
                 const SizedBox(height: 32),

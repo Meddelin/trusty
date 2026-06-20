@@ -117,9 +117,9 @@ jobs:
 
           # Create README
           cat > release-package/README.txt << EOF
-          ## Trusty v0.3.0: One-Click Server Deployment 🚀 (macOS Alpha)
+          ## Trusty (macOS Alpha)
 
-          ### ✨ New Major Feature
+          ### ✨ Highlights
           - **Deploy your own VPN server directly from the app!** Enter your VPS details in the "Server" tab, and Trusty will automatically connect, install the latest TrustTunnel service, configure certificates, bypass busy ports, and seamlessly apply the settings to your client—all in one click!
 
           ### ✨ What's Included

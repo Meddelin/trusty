@@ -41,6 +41,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Local scratch / working material (never commit)
+scratch/
+
+# SSH private keys (never commit)
+id_ed25519
+id_rsa
+*.ppk
+
 # Android specific - signing keys
 *.jks
 *.keystore

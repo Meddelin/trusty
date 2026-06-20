@@ -20,6 +20,7 @@ class ServerConfig {
   final String dns;
   final String logLevel;
   final String customSni;
+  final String clientRandomPrefix;
   final bool postQuantumGroupEnabled;
 
   // Split tunneling settings
@@ -40,6 +41,7 @@ class ServerConfig {
     this.dns = '8.8.8.8',
     this.logLevel = 'info',
     this.customSni = '',
+    this.clientRandomPrefix = '',
     this.postQuantumGroupEnabled = true,
     this.vpnMode = VpnMode.general,
     this.splitTunnelDomains = const [],
@@ -62,6 +64,7 @@ class ServerConfig {
       dns: '8.8.8.8',
       logLevel: 'info',
       customSni: '',
+      clientRandomPrefix: '',
       postQuantumGroupEnabled: true,
       vpnMode: VpnMode.general,
       splitTunnelDomains: [],
@@ -84,6 +87,7 @@ class ServerConfig {
       'dns': dns,
       'logLevel': logLevel,
       'customSni': customSni,
+      'clientRandomPrefix': clientRandomPrefix,
       'postQuantumGroupEnabled': postQuantumGroupEnabled,
       'vpnMode': vpnMode.name,
       'splitTunnelDomains': splitTunnelDomains,
@@ -102,6 +106,7 @@ class ServerConfig {
     final dns = json['dns'] as String? ?? '8.8.8.8';
     final logLevel = json['logLevel'] as String? ?? 'info';
     final customSni = json['customSni'] as String? ?? '';
+    final clientRandomPrefix = json['clientRandomPrefix'] as String? ?? '';
     final postQuantumGroupEnabled = json['postQuantumGroupEnabled'] as bool? ?? true;
 
     return ServerConfig(
@@ -117,6 +122,7 @@ class ServerConfig {
       dns: dns,
       logLevel: logLevel,
       customSni: customSni,
+      clientRandomPrefix: clientRandomPrefix,
       postQuantumGroupEnabled: postQuantumGroupEnabled,
       vpnMode: VpnMode.values.firstWhere(
         (e) => e.name == json['vpnMode'],
@@ -169,6 +175,7 @@ class ServerConfig {
     final skipVerif = skipVerification;
     final upProto = upstreamProtocol;
     final dpi = antiDpi;
+    final crp = clientRandomPrefix;
     final pqg = postQuantumGroupEnabled;
 
     return '''# Logging level [info, debug, trace]
@@ -231,7 +238,7 @@ username = "$u"
 # Password for authorization
 password = "$pwd"
 # TLS client random prefix and mask (hex string, format: prefix[/mask])
-client_random_prefix = ""
+client_random_prefix = "$crp"
 # Skip the endpoint certificate verification?
 # That is, any certificate is accepted with this one set to true.
 skip_verification = $skipVerif
@@ -283,6 +290,7 @@ change_system_dns = true
     String? dns,
     String? logLevel,
     String? customSni,
+    String? clientRandomPrefix,
     bool? postQuantumGroupEnabled,
     VpnMode? vpnMode,
     List<String>? splitTunnelDomains,
@@ -301,6 +309,7 @@ change_system_dns = true
       dns: dns ?? this.dns,
       logLevel: logLevel ?? this.logLevel,
       customSni: customSni ?? this.customSni,
+      clientRandomPrefix: clientRandomPrefix ?? this.clientRandomPrefix,
       postQuantumGroupEnabled: postQuantumGroupEnabled ?? this.postQuantumGroupEnabled,
       vpnMode: vpnMode ?? this.vpnMode,
       splitTunnelDomains: splitTunnelDomains ?? this.splitTunnelDomains,

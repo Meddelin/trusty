@@ -1,10 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import '../models/setup_step.dart';
 import '../models/server_setup_config.dart';
 import 'config_service.dart';
+
+/// Thrown when the user declines to replace an existing installation.
+class _SetupCancelled implements Exception {}
 
 class ServerSetupService extends ChangeNotifier {
   SetupStep _currentStep = SetupStep.idle;
@@ -99,8 +103,14 @@ class ServerSetupService extends ChangeNotifier {
     sftp.close();
   }
 
-  /// Main installation method
-  Future<void> installServer(ServerSetupConfig config) async {
+  /// Main installation method.
+  ///
+  /// [confirmReplace] is awaited when an existing installation is detected;
+  /// returning false aborts before anything is changed on the server.
+  Future<void> installServer(
+    ServerSetupConfig config, {
+    Future<bool> Function()? confirmReplace,
+  }) async {
     _logs.clear();
     _errorMessage = null;
     _alreadyInstalled = false;
@@ -110,8 +120,8 @@ class ServerSetupService extends ChangeNotifier {
       // Step 1: SSH connect
       await _stepConnect(config);
 
-      // Step 2: Check system
-      await _stepCheckSystem(config);
+      // Step 2: Check system (may prompt to replace an existing install)
+      await _stepCheckSystem(config, confirmReplace);
 
       // Step 3: Install TrustTunnel
       await _stepInstall();
@@ -130,6 +140,10 @@ class ServerSetupService extends ChangeNotifier {
 
       _setStep(SetupStep.completed);
       _addLog('Installation completed successfully!');
+    } on _SetupCancelled {
+      _addLog('Installation cancelled — existing server was kept.');
+      disconnect();
+      _setStep(SetupStep.idle);
     } catch (e) {
       _errorMessage = e.toString();
       _setStep(SetupStep.failed);
@@ -172,7 +186,10 @@ class ServerSetupService extends ChangeNotifier {
     _addLog('SSH connection established');
   }
 
-  Future<void> _stepCheckSystem(ServerSetupConfig config) async {
+  Future<void> _stepCheckSystem(
+    ServerSetupConfig config,
+    Future<bool> Function()? confirmReplace,
+  ) async {
     _setStep(SetupStep.checkingSystem);
 
     // Check architecture
@@ -197,6 +214,13 @@ class ServerSetupService extends ChangeNotifier {
     } catch (_) {
       _alreadyInstalled = false;
       _addLog('Trusty is not installed, will be installed');
+    }
+
+    // Existing install found — confirm before touching anything destructive
+    // (the port check below stops the running service).
+    if (_alreadyInstalled && confirmReplace != null) {
+      final proceed = await confirmReplace();
+      if (!proceed) throw _SetupCancelled();
     }
 
     // Check if curl is available
@@ -268,9 +292,20 @@ class ServerSetupService extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // Upload vpn.toml
+    // Generate the client_random_prefix before writing configs that reference it
+    if (config.generateClientRandomPrefix && config.clientRandomPrefix.isEmpty) {
+      config.clientRandomPrefix = _generateHexPrefix();
+    }
+
+    // Upload vpn.toml (includes rules_file when filtering is enabled)
     await _uploadFile('/opt/trusttunnel/vpn.toml', config.generateVpnToml());
     _addLog('vpn.toml uploaded');
+
+    // Upload rules.toml for connection filtering
+    if (config.generateClientRandomPrefix) {
+      await _uploadFile('/opt/trusttunnel/rules.toml', config.generateRulesToml());
+      _addLog('Connection filtering enabled (prefix: ${config.clientRandomPrefix})');
+    }
 
     // Upload credentials.toml
     await _uploadFile(
@@ -387,15 +422,29 @@ class ServerSetupService extends ChangeNotifier {
     }
   }
 
+  /// 4 random bytes as hex — matches the endpoint's default prefix length.
+  String _generateHexPrefix() {
+    final rnd = Random.secure();
+    return List.generate(
+      4,
+      (_) => rnd.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+  }
+
   /// Apply server setup to client connection config
   Future<void> applyToClientConfig(ConfigService configService) async {
     final existingConfig = await configService.loadConfig();
+    // Only override the client prefix when the installer generated one.
+    final prefix = (_lastConfig?.clientRandomPrefix.isNotEmpty ?? false)
+        ? _lastConfig!.clientRandomPrefix
+        : existingConfig.clientRandomPrefix;
     final updatedConfig = existingConfig.copyWith(
       hostname: _lastConfig?.domain ?? existingConfig.hostname,
       address: _lastConfig?.host ?? existingConfig.address,
       port: _lastConfig?.listenPort ?? existingConfig.port,
       username: _lastConfig?.vpnUsername ?? existingConfig.username,
       password: _lastConfig?.vpnPassword ?? existingConfig.password,
+      clientRandomPrefix: prefix,
     );
     await configService.saveConfig(updatedConfig);
   }
@@ -403,9 +452,12 @@ class ServerSetupService extends ChangeNotifier {
   ServerSetupConfig? _lastConfig;
 
   /// Wrapper that stores config for later use by applyToClientConfig
-  Future<void> installAndRemember(ServerSetupConfig config) async {
+  Future<void> installAndRemember(
+    ServerSetupConfig config, {
+    Future<bool> Function()? confirmReplace,
+  }) async {
     _lastConfig = config;
-    await installServer(config);
+    await installServer(config, confirmReplace: confirmReplace);
   }
 
   /// Disconnect SSH

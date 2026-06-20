@@ -17,6 +17,12 @@ class ServerSetupConfig {
   String vpnUsername;
   String vpnPassword;
 
+  // Connection filtering: generate a TLS client_random_prefix, allow only
+  // clients that send it (deny everyone else). [clientRandomPrefix] is filled
+  // in by the installer and carried over to the client config.
+  bool generateClientRandomPrefix;
+  String clientRandomPrefix;
+
   ServerSetupConfig({
     this.host = '',
     this.sshPort = 22,
@@ -29,6 +35,8 @@ class ServerSetupConfig {
     this.listenPort = 443,
     this.vpnUsername = '',
     this.vpnPassword = '',
+    this.generateClientRandomPrefix = false,
+    this.clientRandomPrefix = '',
   });
 
   /// Serialize non-sensitive fields for persistence
@@ -43,7 +51,8 @@ class ServerSetupConfig {
       'email': email,
       'listenPort': listenPort,
       'vpnUsername': vpnUsername,
-      // Passwords are NOT saved
+      'generateClientRandomPrefix': generateClientRandomPrefix,
+      // Passwords and the generated prefix are NOT saved
     };
   }
 
@@ -58,16 +67,36 @@ class ServerSetupConfig {
       email: json['email'] as String? ?? '',
       listenPort: json['listenPort'] as int? ?? 443,
       vpnUsername: json['vpnUsername'] as String? ?? '',
+      generateClientRandomPrefix:
+          json['generateClientRandomPrefix'] as bool? ?? false,
     );
   }
 
   /// Generate vpn.toml content
   String generateVpnToml() {
+    final rules = generateClientRandomPrefix
+        ? 'rules_file = "/opt/trusttunnel/rules.toml"\n'
+        : '';
     return 'listen_address = "0.0.0.0:$listenPort"\n'
-        'credentials_file = "/opt/trusttunnel/credentials.toml"\n\n'
+        'credentials_file = "/opt/trusttunnel/credentials.toml"\n'
+        '$rules'
+        '\n'
         '[listen_protocols.http1]\n'
         '[listen_protocols.http2]\n'
         '[listen_protocols.quic]\n';
+  }
+
+  /// Generate rules.toml content for client_random_prefix filtering.
+  /// Rules are evaluated in order and the default action is allow, so the
+  /// trailing deny blocks everyone who doesn't send the matching prefix.
+  String generateRulesToml() {
+    return '# Allow only clients sending the matching TLS client random\n'
+        '# prefix; deny everyone else (probes, scanners).\n'
+        '[[rule]]\n'
+        'client_random_prefix = "$clientRandomPrefix"\n'
+        'action = "allow"\n\n'
+        '[[rule]]\n'
+        'action = "deny"\n';
   }
 
   /// Generate credentials.toml content

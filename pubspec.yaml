@@ -1,7 +1,7 @@
 name: trusty
 description: "Cross-platform GUI client for TrustTunnel VPN"
 publish_to: "none"
-version: 0.3.0+1
+version: 0.3.1+2
 homepage: https://github.com/Meddelin/trusty
 repository: https://github.com/Meddelin/trusty
 issue_tracker: https://github.com/Meddelin/trusty/issues
@@ -36,6 +36,10 @@ dependencies:
 
   # SSH client for remote server setup
   dartssh2: ^2.9.0
+
+  # FFI for Win32 GetShortPathNameW (ASCII paths so a Cyrillic install dir
+  # doesn't break the CLI)
+  ffi: ^2.1.0
 
 dev_dependencies:
   flutter_test:

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] - 2026-06-20
+
+### Added
+- **Client random prefix** field in Settings — lets you connect to servers that filter connections by a TLS client random prefix.
+- **Connection filtering** option when deploying a server — generates the prefix, configures the server to allow only your client, and auto-fills it into your client settings.
+- **Bulk import** for split tunneling — paste a whole list of domains/IPs/CIDR at once instead of adding them one by one.
+
+### Changed
+- Server install now asks for confirmation before stopping and replacing an existing TrustTunnel installation.
+
+### Fixed
+- Windows: window close/minimize/maximize buttons could be invisible on the light theme.
+- Connection failing to start when the application path contained non-ASCII characters (e.g. Cyrillic).
+
 ## [0.3.0] - 2026-05-27
 
 ### Added

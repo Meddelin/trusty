@@ -60,10 +60,12 @@ void main() async {
 
   // Configure window
   const windowOptions = WindowOptions(
+    // ponytail: opaque background on purpose. A transparent window background
+    // makes the native title bar wash out the close/min/max glyphs on Windows
+    // light theme (they become near-invisible). No custom window shape needs it.
     size: Size(950, 700),
     minimumSize: Size(850, 650),
     center: true,
-    backgroundColor: Colors.transparent,
     skipTaskbar: false,
     title: 'Trusty VPN',
   );

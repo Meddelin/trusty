@@ -7,12 +7,12 @@ Detailed guide for configuring Trusty VPN.
 - [Remote Server Deployment](#remote-server-deployment)
 - [Server Configuration](#server-configuration)
 - [Authentication](#authentication)
+- [Connection Filtering](#connection-filtering)
 - [Network Settings](#network-settings)
 - [Advanced Settings](#advanced-settings)
 - [Split Tunneling](#split-tunneling)
 - [DNS Configuration](#dns-configuration)
 - [Configuration File Format](#configuration-file-format)
-- [Import/Export](#importexport)
 
 ## Remote Server Deployment
 
@@ -46,12 +46,15 @@ Navigate to the **Server** tab and fill in:
 - **Username** - Login for VPN connection
 - **Password** - Use the dice button to generate a secure random password
 
+**Security (optional):**
+- **Enable connection filtering** - Generates a random TLS `client_random_prefix`, configures the server to allow only clients that send it and deny everyone else (probes, scanners). The prefix is carried over to your client settings by **Apply Client Settings**. See [Connection Filtering](#connection-filtering).
+
 Click **Install Server** to start the automated deployment. The process:
 
 1. Connects via SSH
-2. Checks system architecture and existing installations
+2. Checks system architecture and existing installations — if TrustTunnel is already installed, **you are asked to confirm** before it is stopped and replaced
 3. Downloads and installs Trusty endpoint
-4. Generates and uploads configuration files (vpn.toml, credentials.toml, hosts.toml)
+4. Generates and uploads configuration files (vpn.toml, credentials.toml, hosts.toml, and rules.toml if filtering is enabled)
 5. Installs certbot and obtains a Let's Encrypt TLS certificate
 6. Sets up and starts a systemd service
 7. Verifies the service is running
@@ -81,6 +84,16 @@ password = "your-password"
 hostname = "vpn.example.com"
 cert_chain_path = "/etc/letsencrypt/live/vpn.example.com/fullchain.pem"
 private_key_path = "/etc/letsencrypt/live/vpn.example.com/privkey.pem"
+```
+
+**`/opt/trusttunnel/rules.toml`** *(only when connection filtering is enabled)* - referenced from `vpn.toml` via `rules_file`. Rules are evaluated in order; the default is allow, so the trailing deny blocks everyone who doesn't send the prefix:
+```toml
+[[rule]]
+client_random_prefix = "a1b2c3d4"
+action = "allow"
+
+[[rule]]
+action = "deny"
 ```
 
 ### Troubleshooting Server Deployment
@@ -174,6 +187,21 @@ Your VPN account password.
 - Don't share passwords or commit them to version control
 - Consider using a password manager to generate strong passwords
 
+## Connection Filtering
+
+Some servers only answer clients that send a known **TLS client random prefix** and silently drop everyone else. This hides the server from probes and scanners. If your server uses this, you must send the matching prefix or you won't be able to connect.
+
+### Client random prefix
+
+**Settings → Authentication → Client random prefix.** A hex string (format: `prefix` or `prefix/mask`).
+
+- Leave it **empty** unless your server requires it.
+- The value must match an `allow` rule in the server's `rules.toml`.
+- If you deployed the server from Trusty with **connection filtering** enabled, the prefix is generated for you and filled in automatically by **Apply Client Settings** — you don't need to type anything.
+- For a manually configured server, copy the exact prefix from the server's `rules.toml`.
+
+It is not a secret that protects your traffic (TLS already does that) — it's an access/obfuscation token. Anyone who knows it can pass the filter, so treat it like a shared access code.
+
 ## Network Settings
 
 ### DNS Server
@@ -232,19 +260,6 @@ The protocol used to communicate with the server.
 - Need better performance over unreliable networks
 - Server explicitly recommends it
 
-### Fallback Protocol
-
-Protocol to use if the primary protocol fails.
-
-**Options:**
-- **None** (default): Don't fallback
-- **HTTP/2**: Fallback to HTTP/2
-- **HTTP/3**: Fallback to HTTP/3
-
-**Use cases:**
-- Primary: HTTP/3, Fallback: HTTP/2 (try new protocol, fallback to stable)
-- Primary: HTTP/2, Fallback: None (keep it simple)
-
 ## Advanced Settings
 
 ### Skip Certificate Verification
@@ -272,6 +287,18 @@ Enables anti-Deep Packet Inspection measures to bypass network restrictions.
 - Experiencing unexpected connection drops
 
 **Note:** May slightly impact performance. Test with and without to see if needed.
+
+### Post-Quantum Key Exchange
+
+**Default:** Enabled
+
+When enabled, a post-quantum group may be used for key exchange during the TLS handshake. Leave it on unless a server is incompatible with it.
+
+### Custom SNI
+
+**Default:** empty (uses the hostname)
+
+Overrides the SNI value sent in the TLS handshake. Leave empty unless your server administrator told you to set a specific value.
 
 ### Log Level
 
@@ -308,6 +335,8 @@ Split tunneling allows selective routing of traffic through the VPN.
 ### Exclusions/Inclusions
 
 Add domains, IP addresses, or applications to exclude (General mode) or include (Selective mode).
+
+Add entries one at a time with **+**, or click the **paste-list** button to import many at once — paste a block with one entry per line (commas and spaces also work). Pasted IPs, CIDRs and domains are added directly; duplicates are ignored.
 
 **Domain Examples:**
 
@@ -374,11 +403,10 @@ Discord               # Discord app
 
 ## DNS Configuration
 
-The DNS field in settings is simplified. For advanced DNS configuration, you can:
+The DNS field is required. You can:
 
-1. Use a custom DNS server IP: `8.8.8.8`
-2. Leave empty to use system DNS
-3. For encrypted DNS (DoH/DoT), use the full URL format as shown in [Network Settings](#network-settings)
+1. Use a plain DNS server IP: `8.8.8.8`
+2. Use encrypted DNS (DoH/DoT/DoQ) with the full URL format as shown in [Network Settings](#network-settings)
 
 **DNS Leak Protection:**
 - The client automatically routes DNS queries through the VPN when configured
@@ -394,6 +422,8 @@ The GUI generates TOML configuration files for the Trusty client.
 loglevel = "info"
 vpn_mode = "general"
 killswitch_enabled = true
+killswitch_allow_ports = []
+post_quantum_group_enabled = true
 exclusions = ["*.local", "192.168.0.0/16"]
 dns_upstreams = ["8.8.8.8:53"]
 
@@ -403,10 +433,12 @@ addresses = ["203.0.113.10:443"]
 has_ipv6 = true
 username = "your-username"
 password = "your-password"
+client_random_prefix = ""
 skip_verification = false
+certificate = ""
 upstream_protocol = "http2"
-upstream_fallback_protocol = ""
 anti_dpi = false
+custom_sni = ""
 
 [listener]
 [listener.tun]
@@ -423,37 +455,6 @@ change_system_dns = true
 - Generated automatically when clicking "Connect"
 - Contains credentials (not committed to git)
 
-## Import/Export
-
-### Export Configuration
-
-To back up your settings or transfer to another computer:
-
-1. Open **Settings** tab
-2. Click **Export Configuration**
-3. Choose a save location
-4. Save as `.json` file
-
-**Exported data includes:**
-- Server hostname and IP
-- Port and protocol settings
-- Username (password is encrypted)
-- DNS settings
-- Split tunneling rules
-
-### Import Configuration
-
-To restore settings or use a shared configuration:
-
-1. Open **Settings** tab
-2. Click **Import Configuration**
-3. Select the `.json` file
-4. Review imported settings
-5. Update password if needed
-6. Click **Save Settings**
-
-**Note:** Always verify imported configurations before connecting. Ensure the server details are correct.
-
 ## Security Best Practices
 
 1. **Use strong authentication:**
@@ -468,8 +469,7 @@ To restore settings or use a shared configuration:
 
 3. **Protect configuration files:**
    - Don't share config files with passwords
-   - Don't commit configs to version control
-   - Use import/export for password-free transfers
+   - Don't commit configs to version control (the generated `trusttunnel_client.toml` contains your password)
 
 4. **Split tunneling considerations:**
    - Understand what traffic bypasses the VPN

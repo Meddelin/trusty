@@ -216,6 +216,16 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
+
+    case WM_SETTINGCHANGE:
+      // Re-apply the title bar theme when the user toggles Windows light/dark
+      // mode at runtime; otherwise the caption stays stuck in the old mode.
+      if (lparam != 0 &&
+          wcscmp(reinterpret_cast<const wchar_t*>(lparam),
+                 L"ImmersiveColorSet") == 0) {
+        UpdateTheme(hwnd);
+      }
+      break;
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);

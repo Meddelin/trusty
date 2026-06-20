@@ -23,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _passwordController;
   late TextEditingController _dnsController;
   late TextEditingController _customSniController;
+  late TextEditingController _clientRandomPrefixController;
 
   bool _hasIpv6 = true;
   bool _skipVerification = false;
@@ -45,6 +46,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _passwordController = TextEditingController();
     _dnsController = TextEditingController();
     _customSniController = TextEditingController();
+    _clientRandomPrefixController = TextEditingController();
 
     _configService = context.read<ConfigService>();
     _configService.addListener(_onConfigChanged);
@@ -68,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _passwordController.text = config.password;
       _dnsController.text = config.dns;
       _customSniController.text = config.customSni;
+      _clientRandomPrefixController.text = config.clientRandomPrefix;
       _hasIpv6 = config.hasIpv6;
       _skipVerification = config.skipVerification;
       _antiDpi = config.antiDpi;
@@ -98,6 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         dns: _dnsController.text.trim(),
         logLevel: _logLevel,
         customSni: _customSniController.text.trim(),
+        clientRandomPrefix: _clientRandomPrefixController.text.trim(),
       );
 
       await _configService.saveConfig(config);
@@ -132,6 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _passwordController.dispose();
     _dnsController.dispose();
     _customSniController.dispose();
+    _clientRandomPrefixController.dispose();
     super.dispose();
   }
 
@@ -256,6 +261,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _passwordVisible = !_passwordVisible;
                       });
                     },
+                  ),
+                ),
+                SizedBox(height: 16),
+                _buildTextField(
+                  controller: _clientRandomPrefixController,
+                  label: 'Client random prefix (optional)',
+                  icon: Icons.fingerprint,
+                  enabled: !isConnected,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 12),
+                  child: Text(
+                    'Hex prefix for connection filtering. Leave empty unless your '
+                    'server requires it via a matching rule in rules.toml.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                   ),
                 ),
 

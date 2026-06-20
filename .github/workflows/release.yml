@@ -219,10 +219,19 @@ jobs:
         run: |
           $cliVersion = (Get-Content ".\cli_version.txt" -Raw).Trim()
           $changelog = @"
-          ## Trusty v0.3.0: One-Click Server Deployment 🚀
+          ## Trusty v0.3.1
 
-          ### ✨ New Major Feature
-          - **Deploy your own VPN server directly from the app!** Enter your VPS details in the "Server" tab, and Trusty will automatically connect, install the latest TrustTunnel service, configure certificates, bypass busy ports, and seamlessly apply the settings to your client—all in one click!
+          Bug fixes and quality-of-life improvements on top of v0.3.0.
+
+          ### ✨ Improvements
+          - **Client random prefix** — connect to servers that filter connections by a TLS client random prefix (new field in Settings → Authentication).
+          - **Connection filtering on deploy** — the one-click server installer can generate the prefix, lock the server to your client, and auto-fill it into your settings.
+          - **Bulk import** for split tunneling — paste a whole list of domains/IPs/CIDR at once instead of adding them one by one.
+          - **Safe re-install** — the installer now asks for confirmation before replacing an existing TrustTunnel installation.
+
+          ### 🐛 Fixes
+          - Windows: the window close/minimize/maximize buttons could be invisible on the light theme.
+          - Fixed connecting when the application path contains non-Latin characters (e.g. Cyrillic).
 
           ### ✨ What's Included
 

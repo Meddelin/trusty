@@ -127,17 +127,17 @@ Both download the **latest** CLI from [TrustTunnelClient releases](https://githu
 | tray_manager | ^0.2.3 | System tray (Windows, macOS) |
 | window_manager | ^0.4.2 | Window control |
 | dartssh2 | ^2.9.0 | SSH/SFTP for server deployment |
+| ffi | ^2.1.0 | Win32 `GetShortPathNameW` (ASCII paths for the CLI) |
 | cupertino_icons | ^1.0.8 | Icons |
 
 ## Known Issues & TODOs
 
 - [ ] macOS: no code signing (Gatekeeper bypass required on first launch)
 - [ ] No auto-download CLI at runtime
-- [ ] Minimal tests (only widget_test template)
+- [ ] No auto-update of geoip/geosite exclusion lists
+- [ ] Limited tests (model/parser unit tests; no widget/integration coverage)
 - [ ] SOCKS5 listener not in GUI (TUN only)
 - [ ] No auto-reconnect
-- [ ] `post_quantum_group_enabled` hardcoded `false` (CLI default is `true` since v0.99.102)
-- [ ] `custom_sni` field not exposed in GUI (available in CLI since v1.0.3)
 - [ ] Deep-link import (`tt://?` format, `--deeplink` flag) not implemented
 
 ## Upstream
