@@ -235,7 +235,7 @@ jobs:
 
           ### ✨ What's Included
 
-          ✅ **TrustTunnel CLI (`$cliVersion`) is pre-bundled!**
+          ✅ **TrustTunnel CLI ($cliVersion) is pre-bundled!**
           No separate downloads needed - everything works out of the box.
 
           ### Installation
