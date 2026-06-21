@@ -10,6 +10,29 @@ import 'config_service.dart';
 /// Thrown when the user declines to replace an existing installation.
 class _SetupCancelled implements Exception {}
 
+/// Generate a TLS client-random prefix in the `prefix/mask` form the client
+/// requires (a bare prefix is silently ignored). 4-byte prefix + 4-byte mask
+/// with ~70% of bits set, matching the endpoint's own generator defaults
+/// (--prefix-length 4, --prefix-percent 70). The same string is written to
+/// both the client config and the server's rules.toml, so any valid
+/// prefix/mask pair works as long as both sides match.
+String generateClientRandomPrefix(Random rnd) {
+  String hex4(int Function() nextByte) => List.generate(
+        4,
+        (_) => nextByte().toRadixString(16).padLeft(2, '0'),
+      ).join();
+
+  final prefix = hex4(() => rnd.nextInt(256));
+  final mask = hex4(() {
+    var b = 0;
+    for (var i = 0; i < 8; i++) {
+      if (rnd.nextInt(100) < 70) b |= 1 << i;
+    }
+    return b;
+  });
+  return '$prefix/$mask';
+}
+
 class ServerSetupService extends ChangeNotifier {
   SetupStep _currentStep = SetupStep.idle;
   final List<String> _logs = [];
@@ -294,7 +317,7 @@ class ServerSetupService extends ChangeNotifier {
 
     // Generate the client_random_prefix before writing configs that reference it
     if (config.generateClientRandomPrefix && config.clientRandomPrefix.isEmpty) {
-      config.clientRandomPrefix = _generateHexPrefix();
+      config.clientRandomPrefix = generateClientRandomPrefix(Random.secure());
     }
 
     // Upload vpn.toml (includes rules_file when filtering is enabled)
@@ -420,15 +443,6 @@ class ServerSetupService extends ChangeNotifier {
       throw Exception(
           'Service failed to start.\n\nLogs:\n$journal\n\nOriginal error: $e');
     }
-  }
-
-  /// 4 random bytes as hex — matches the endpoint's default prefix length.
-  String _generateHexPrefix() {
-    final rnd = Random.secure();
-    return List.generate(
-      4,
-      (_) => rnd.nextInt(256).toRadixString(16).padLeft(2, '0'),
-    ).join();
   }
 
   /// Apply server setup to client connection config

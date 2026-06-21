@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.2] - 2026-06-21
+
+### Fixed
+- **Connection filtering (client random prefix) now works.** The client config wrote the TLS client random under the wrong key — `client_random_prefix` instead of `client_random` — so the bundled client silently ignored it and could not connect to servers that filter by the prefix (handshakes were rejected: "Failed to ping location" / "Number of connection attempts exceeded", or "QUIC connection closed due to transport error"). The client config now uses the correct `client_random` key, and the auto-generated server prefix uses the required `prefix/mask` form. Servers without filtering were unaffected.
+
 ## [0.3.1] - 2026-06-20
 
 ### Added

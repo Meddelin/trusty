@@ -237,8 +237,8 @@ has_ipv6 = $ipv6
 username = "$u"
 # Password for authorization
 password = "$pwd"
-# TLS client random prefix and mask (hex string, format: prefix[/mask])
-client_random_prefix = "$crp"
+# TLS client random prefix and mask (hex, format: prefix[/mask])
+client_random = "$crp"
 # Skip the endpoint certificate verification?
 # That is, any certificate is accepted with this one set to true.
 skip_verification = $skipVerif

@@ -219,19 +219,12 @@ jobs:
         run: |
           $cliVersion = (Get-Content ".\cli_version.txt" -Raw).Trim()
           $changelog = @"
-          ## Trusty v0.3.1
+          ## Trusty v0.3.2
 
-          Bug fixes and quality-of-life improvements on top of v0.3.0.
+          Hotfix: connection filtering (client random prefix) now actually works.
 
-          ### ✨ Improvements
-          - **Client random prefix** — connect to servers that filter connections by a TLS client random prefix (new field in Settings → Authentication).
-          - **Connection filtering on deploy** — the one-click server installer can generate the prefix, lock the server to your client, and auto-fill it into your settings.
-          - **Bulk import** for split tunneling — paste a whole list of domains/IPs/CIDR at once instead of adding them one by one.
-          - **Safe re-install** — the installer now asks for confirmation before replacing an existing TrustTunnel installation.
-
-          ### 🐛 Fixes
-          - Windows: the window close/minimize/maximize buttons could be invisible on the light theme.
-          - Fixed connecting when the application path contains non-Latin characters (e.g. Cyrillic).
+          ### 🐛 Fixed
+          - **Connection filtering was broken.** The client config wrote the TLS client random under the wrong key — "client_random_prefix" instead of "client_random" — so the bundled client silently ignored it. Clients could not connect to servers that filter by the prefix: handshakes were rejected and the logs showed "Failed to ping location" / "Number of connection attempts exceeded" (or "QUIC connection closed due to transport error"). The client config now uses the correct "client_random" key, and the server-side prefix is generated in the required prefix/mask form. Servers that don't use filtering were unaffected.
 
           ### ✨ What's Included
 

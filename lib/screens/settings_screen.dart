@@ -273,8 +273,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 6, left: 12),
                   child: Text(
-                    'Hex prefix for connection filtering. Leave empty unless your '
-                    'server requires it via a matching rule in rules.toml.',
+                    'For servers with connection filtering. Use the exact '
+                    'hex value from the server\'s rules.toml, in prefix/mask '
+                    'form (e.g. 24503c49/b5797ccf). Leave empty if unused.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.outline,
                         ),
