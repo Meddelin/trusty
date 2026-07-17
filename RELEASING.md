@@ -7,7 +7,7 @@ When a `v*` tag is pushed, two workflows are triggered automatically:
 | Workflow | File | Platform | Release Type |
 |----------|------|----------|-------------|
 | Build and Release Windows | `release.yml` | Windows x64 | stable |
-| Build and Release macOS | `release-macos.yml` | macOS universal | alpha (prerelease) |
+| Build and Release macOS | `release-macos.yml` | macOS universal | stable |
 
 ## Creating a Release
 
@@ -38,7 +38,7 @@ git push origin v0.3.0
 - GitHub Actions builds both platforms (3-5 minutes)
 - Releases appear on [Releases](../../releases)
 - Windows: `Trusty-Windows-v0.3.0.zip` (stable)
-- macOS: `Trusty-macOS-v0.3.0.zip` (prerelease)
+- macOS: `Trusty-macOS-v0.3.0.zip` (stable)
 
 ## What Happens During Build
 
@@ -57,7 +57,7 @@ git push origin v0.3.0
 2. `flutter build macos --release`
 3. Download CLI (`*macos*universal*`) from TrustTunnelClient releases
 4. Build ZIP with .app, client/, README.txt
-5. Publish GitHub Release (prerelease)
+5. Publish GitHub Release (stable)
 
 ## Versioning
 

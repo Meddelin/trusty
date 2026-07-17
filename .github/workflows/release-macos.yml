@@ -1,4 +1,4 @@
-name: Build and Release macOS (Alpha)
+name: Build and Release macOS
 
 on:
   push:
@@ -115,7 +115,7 @@ jobs:
 
           # Create README
           cat > release-package/README.txt << EOF
-          ## Trusty (macOS Alpha)
+          ## Trusty (macOS)
 
           ### ✨ Highlights
           - **Deploy your own VPN server directly from the app!** Enter your VPS details in the "Server" tab, and Trusty will automatically connect, install the latest TrustTunnel service, configure certificates, bypass busy ports, and seamlessly apply the settings to your client—all in one click!
@@ -133,11 +133,6 @@ jobs:
           4. Right-click and choose Open
           5. Install a server or configure an existing one
           6. Click Connect!
-
-          ## Alpha Notice
-
-          This is an alpha release for macOS. Some features may not work correctly.
-          Please report issues at the project repository.
 
           ## Requirements
 
@@ -165,9 +160,7 @@ jobs:
           files: |
             Trusty-macOS-*.zip
           body: |
-            ## macOS Alpha Release
-
-            **This is an alpha release for macOS.** It has not been tested on real hardware.
+            ## macOS Release
 
             ### Installation
 
@@ -188,7 +181,7 @@ jobs:
             - macOS 11+ (Big Sur or later)
             - TrustTunnel server access
           draft: false
-          prerelease: true
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

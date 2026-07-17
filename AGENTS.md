@@ -5,7 +5,7 @@
 **Trusty** is a cross-platform Flutter GUI client for [Trusty VPN](https://github.com/TrustTunnel/TrustTunnelClient) (Apache 2.0).
 A wrapper around the CLI client: generates TOML configs and manages the process.
 
-**Platforms:** Windows 10/11 (stable), macOS 11+ (alpha)
+**Platforms:** Windows 10/11, macOS 11+ (both stable)
 
 ## Architecture
 
@@ -88,7 +88,7 @@ Key platform checks in code:
 Two GitHub Actions workflows triggered on `v*` tags:
 
 - `.github/workflows/release.yml` — Windows (stable release)
-- `.github/workflows/release-macos.yml` — macOS (alpha prerelease)
+- `.github/workflows/release-macos.yml` — macOS (stable release)
 
 Both download the **latest** CLI from [TrustTunnelClient releases](https://github.com/TrustTunnel/TrustTunnelClient/releases) at build time.
 
@@ -108,8 +108,8 @@ Both download the **latest** CLI from [TrustTunnelClient releases](https://githu
 - All user-facing text is in **English**
 
 ### Platform Considerations
-- **Windows:** Admin privileges for TUN; needs `wintun.dll`; 5s Wintun release wait after disconnect; if `WSAENOBUFS (10055)` errors appear, apply registry fix (see README Troubleshooting)
-- **macOS:** Sandbox disabled; native utun; no code signing (alpha); on first VPN connect, an osascript dialog asks for the Mac password once to set `chmod u+s` on the CLI binary — no terminal needed on subsequent runs
+- **Windows:** Admin privileges for TUN; needs `wintun.dll`; the Wintun adapter takes ~5s to release after disconnect — handled automatically (the wait is deferred and paid lazily before the next connect); if `WSAENOBUFS (10055)` errors appear, apply registry fix (see README Troubleshooting)
+- **macOS:** Sandbox disabled; native utun; no code signing (Right-click → Open on first launch); on first VPN connect, an osascript dialog asks for the Mac password once to set `chmod u+s` on the CLI binary — no terminal needed on subsequent runs
 
 ### Split Tunnel Domain Groups
 - GUI-only grouping, TOML stays flat `exclusions = [...]`

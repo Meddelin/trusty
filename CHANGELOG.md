@@ -21,6 +21,9 @@
 - **Close-window behavior** — the close dialog has a "Remember my choice" checkbox, and a new "On window close" setting (ask / minimize / exit) in Settings → Advanced lets you change the remembered choice later.
 - **Tray sync** — the tray menu and tooltip now follow VPN status changes regardless of where they originate (Home screen button, tray, process exit).
 
+### Changed
+- **macOS is out of alpha** — the macOS workflow now publishes stable (non-prerelease) releases, and the alpha notices were removed from the docs and release notes.
+
 ### Fixed
 - A stale process-exit handler could clear the active connection state (and the new process reference) during a fast disconnect→reconnect.
 - Cancelling while the adapter-release wait was pending no longer launches the client afterwards.

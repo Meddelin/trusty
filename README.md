@@ -5,31 +5,41 @@
 # Trusty — VPN Client
 
 [![Windows](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
-[![macOS](https://img.shields.io/badge/platform-macOS_(alpha)-lightgrey.svg)](https://www.apple.com/macos)
+[![macOS](https://img.shields.io/badge/platform-macOS-black.svg)](https://www.apple.com/macos)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.10.7+-02569B.svg?logo=flutter)](https://flutter.dev)
 [![Release](https://img.shields.io/github/v/release/Meddelin/trusty?include_prereleases)](../../releases)
 
 **Trusty** is a cross-platform GUI client for [TrustTunnel VPN](https://github.com/TrustTunnel/TrustTunnel).
 
-> **Platforms:** Windows 10/11, macOS 11+ (alpha)  
-> **Status:** Community-developed GUI wrapper for TrustTunnel CLI
+> **Platforms:** Windows 10/11, macOS 11+
+> **Status:** Community-developed GUI wrapper for TrustTunnel CLI — see [CHANGELOG.md](CHANGELOG.md) for what's new
 
 ## Features
 
 - Material Design 3 interface with light/dark theme
-- One-click VPN connection
+- One-click VPN connection — connects as soon as the tunnel is up, disconnects instantly
 - **Server deployment to VPS** — automatic setup via SSH, with optional connection filtering (anti-probe TLS prefix)
 - Split tunneling (General/Selective modes)
+  - Domains, IPs, CIDR ranges and applications
   - Bulk import — paste a whole list of domains/IPs/CIDR at once
   - Domain groups with automatic discovery of related resources
+  - Domain suggestions harvested from live VPN logs
 - Real-time VPN log monitoring
-- System tray integration (Windows, macOS)
+- System tray integration (Windows, macOS) — tray always reflects the current status
+- Configurable close behavior — ask / minimize to tray / exit
 - HTTP/2 and HTTP/3 protocols
-- IPv6, custom DNS (DoH/DoT/DoQ)
+- IPv6, custom DNS (DoH/DoT/DoQ), Anti-DPI, post-quantum key exchange, custom SNI
 - Random password generation for VPN accounts
-- VPN password stored in the OS keystore (Windows DPAPI / macOS Keychain)
-- SSH host-key pinning (trust-on-first-use) for server deployment
+
+### Security
+
+- VPN password is stored in the OS keystore (Windows DPAPI / macOS Keychain), never in plain text
+- SSH credentials for server deployment are used in-memory only and **never stored**
+- SSH host-key pinning (trust-on-first-use) protects server deployment from MITM
+- All values interpolated into configs are escaped; deployment inputs are validated before reaching the server shell
+- The generated client config file is restricted to your user account
+- A prominent warning is shown if certificate verification is disabled
 
 ## Quick Start
 
@@ -43,16 +53,14 @@
 
 The archive includes everything: GUI, CLI client (`trusttunnel_client.exe`), Wintun driver.
 
-### macOS (Alpha)
+### macOS
 
 1. Download `Trusty-macOS-vX.X.X.zip` from [Releases](../../releases)
 2. Extract and move `.app` to `/Applications`
 3. Place `client/` folder next to `.app`
-4. First launch: Right-click → Open (Gatekeeper bypass)
+4. First launch: Right-click → Open (the app is not code-signed, so Gatekeeper needs a one-time confirmation)
 5. Configure server in "Settings"
 6. Click "Connect" — on **first connect only**, a macOS password dialog appears to grant VPN tunnel access (one-time setup, no terminal required)
-
-> macOS version is in alpha — no code signing.
 
 ### Building from Source
 
@@ -71,15 +79,15 @@ See [BUILDING.md](BUILDING.md) for details.
 Trusty can automatically deploy a TrustTunnel server on a VPS:
 
 1. Open the **Server** tab
-2. Enter SSH credentials for your VPS (IP, username, password or key)
+2. Enter SSH credentials for your VPS (IP, username, password or key) — used for this session only, never saved
 3. Specify a domain (must point to VPS via A record)
 4. Set VPN username/password
 5. (Optional) Enable **connection filtering** — Trusty generates a secret TLS prefix so the server answers only your client and ignores probes/scanners
 6. Click **Install Server**
 
-Trusty will automatically: connect via SSH → install TrustTunnel → upload configs → obtain TLS certificate via Let's Encrypt → start systemd service.
+Trusty will automatically: connect via SSH → verify the host key (trust-on-first-use) → install TrustTunnel → upload configs → obtain TLS certificate via Let's Encrypt → start systemd service.
 
-If TrustTunnel is already installed on the server, Trusty asks for confirmation before replacing it.
+If TrustTunnel is already installed on the server, Trusty asks for confirmation before replacing it. If the server's SSH host key changed (e.g. you rebuilt the VPS), the deploy stops and offers **Trust new host key & retry**.
 
 After installation, click "Apply Client Settings" to auto-fill connection settings (including the generated prefix, if enabled).
 
@@ -95,12 +103,12 @@ See [CONFIGURATION.md](CONFIGURATION.md#remote-server-deployment) for details.
 | IP Address | Server IP | `203.0.113.10` |
 | Port | Port | `443` |
 | Username | VPN login | `user1` |
-| Password | VPN password | `***` |
+| Password | VPN password (stored in the OS keystore) | `***` |
 | DNS | DNS server | `8.8.8.8`, `tls://1.1.1.1` |
 | Protocol | HTTP/2 or HTTP/3 | `http2` |
 | Client random prefix | Optional — only if your server filters by it | `a1b2c3d4` |
 
-See [CONFIGURATION.md](CONFIGURATION.md) for details.
+Advanced options: IPv6, Anti-DPI, post-quantum key exchange, custom SNI, log level, certificate verification toggle, and the on-window-close behavior (ask / minimize / exit). See [CONFIGURATION.md](CONFIGURATION.md) for all of them.
 
 ## Split Tunneling
 
@@ -118,17 +126,17 @@ alfa.bank
 vk.com
 ```
 
-Domain groups with auto-discovery: when adding a single domain, Trusty finds related resources (CDN, API) and offers to group them.
+Domain groups with auto-discovery: when adding a single domain, Trusty finds related resources (CDN, API) and offers to group them. While the VPN is running, Trusty also watches the logs and suggests domains you might want to add.
 
 ## Platform Details
 
-| | Windows | macOS (alpha) |
+| | Windows | macOS |
 |---|---|---|
 | CLI | `trusttunnel_client.exe` | `trusttunnel_client` |
 | TUN driver | Wintun (`wintun.dll`) | Built-in utun |
 | Tray icon | `.ico` | `.png` |
 | App discovery | Program Files, AppData | `/Applications` |
-| Code signing | Not required | None (Right-click → Open) |
+| Code signing | Not required | None (Right-click → Open once) |
 
 ## Troubleshooting
 
@@ -140,7 +148,11 @@ Domain groups with auto-discovery: when adding a single domain, Trusty finds rel
 ### Wintun Errors (Windows)
 - Close other VPN clients (AmneziaVPN, WireGuard, etc.)
 - Wintun driver can only be used by one application at a time
-- Wait 5 seconds after disconnecting before reconnecting
+- Reconnecting right after a disconnect is handled automatically — Trusty waits for the driver to release before launching
+
+### "SSH host key changed — possible MITM" (Server tab)
+- If you rebuilt/reinstalled the VPS, press **Trust new host key & retry**
+- If you didn't touch the server, stop and investigate — see [CONFIGURATION.md](CONFIGURATION.md#troubleshooting-server-deployment)
 
 ### macOS: Gatekeeper Blocks Launch
 - Right-click on `.app` → Open → Open
