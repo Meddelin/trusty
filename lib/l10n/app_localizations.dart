@@ -1083,6 +1083,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Error: {error}'**
   String serverError(String error);
+
+  /// No description provided for @homeUpdateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'New version available: v{version}'**
+  String homeUpdateAvailable(String version);
+
+  /// No description provided for @homeUpdateDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get homeUpdateDownload;
 }
 
 class _AppLocalizationsDelegate

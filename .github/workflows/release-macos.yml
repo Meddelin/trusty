@@ -188,7 +188,10 @@ jobs:
             - macOS 11+ (Big Sur or later)
             - TrustTunnel server access
           draft: false
-          prerelease: true
+          # Both workflows publish into the same tag's release; a `true` here
+          # could win the race and hide the release from /releases/latest,
+          # which the in-app update check relies on.
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

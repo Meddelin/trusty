@@ -268,5 +268,14 @@
         "type": "String"
       }
     }
-  }
+  },
+  "homeUpdateAvailable": "New version available: v{version}",
+  "@homeUpdateAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "homeUpdateDownload": "Download"
 }

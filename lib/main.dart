@@ -12,6 +12,7 @@ import 'screens/split_tunnel_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/server_setup_screen.dart';
 import 'services/server_setup_service.dart';
+import 'services/update_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/localization_helper.dart';
@@ -245,6 +246,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<ServerSetupService>(
           create: (_) => ServerSetupService(),
         ),
+        ChangeNotifierProvider<UpdateService>(
+          create: (_) => UpdateService(),
+        ),
       ],
       child: MaterialApp(
         title: 'Trusty VPN',
@@ -317,6 +321,11 @@ class _MainScreenState extends State<MainScreen>
 
     // Prevent closing window without cleanup
     windowManager.setPreventClose(true);
+
+    // Background update check, delayed to keep startup snappy
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) context.read<UpdateService>().start();
+    });
   }
 
   @override

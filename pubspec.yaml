@@ -36,6 +36,7 @@ dependencies:
 
   # SSH client for remote server setup
   dartssh2: ^2.9.0
+  package_info_plus: ^10.2.1
 
   # FFI for Win32 GetShortPathNameW (ASCII paths so a Cyrillic install dir
   # doesn't break the CLI)
