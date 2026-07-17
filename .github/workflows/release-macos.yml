@@ -165,6 +165,9 @@ jobs:
         with:
           files: |
             Trusty-macOS-*.zip
+          # Both workflows publish into the same release; append so the
+          # last-finishing job doesn't wipe the other's description.
+          append_body: true
           body: |
             ## macOS Alpha Release
 

@@ -269,6 +269,9 @@ jobs:
         with:
           files: |
             Trusty-Windows-*.zip
+          # Both workflows publish into the same release; append so the
+          # last-finishing job doesn't wipe the other's description.
+          append_body: true
           body_path: changelog.md
           draft: false
           prerelease: false
