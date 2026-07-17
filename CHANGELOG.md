@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.3] - 2026-07-17
+## [0.3.4] - 2026-07-18
 
 ### Security
 - **TOML injection** — escape quotes/newlines/backslashes in all interpolated values (passwords, usernames, hostnames, domains, DNS, exclusions, SNI) in both the client config and the generated server configs, so a crafted value can't inject extra config keys.
@@ -22,11 +22,26 @@
 - **Tray sync** — the tray menu and tooltip now follow VPN status changes regardless of where they originate (Home screen button, tray, process exit).
 
 ### Changed
-- **macOS is out of alpha** — the macOS workflow now publishes stable (non-prerelease) releases, and the alpha notices were removed from the docs and release notes.
+- **macOS is out of alpha** — alpha wording removed from the workflow, docs and release notes; macOS releases are stable from now on.
 
 ### Fixed
 - A stale process-exit handler could clear the active connection state (and the new process reference) during a fast disconnect→reconnect.
 - Cancelling while the adapter-release wait was pending no longer launches the client afterwards.
+
+## [0.3.3] - 2026-07-17
+
+### Added
+- **Update notifications**: Trusty now checks GitHub Releases for a newer version on startup and once a day while running in the tray. When an update is available, the Home screen shows a dismissible banner with the new version number and a **Download** button that opens the release page in the browser.
+- App version is read from the binary metadata (`package_info_plus`), so the update check always compares against the real built version — no manually maintained version constant.
+- Network or GitHub API failures (offline, rate limit) are silent: the banner simply doesn't appear, and the check retries within a day.
+
+### Changed
+- macOS release workflow no longer marks releases as pre-release: both platform workflows publish into the same release, and a pre-release flag could hide it from `/releases/latest` — the endpoint the update check relies on.
+- Release notes templates in CI updated for 0.3.3.
+
+### Fixed
+- All static-analysis warnings (unused import, dead code, deprecated `withOpacity`, `print` in production code, redundant string interpolation braces).
+- Removed the stock template widget test that could never pass in this app.
 
 ## [0.3.2] - 2026-06-21
 

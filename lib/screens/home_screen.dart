@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/vpn_status.dart';
 import '../services/vpn_service.dart';
 import '../services/config_service.dart';
+import '../services/update_service.dart';
 import '../l10n/app_localizations.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -23,6 +24,9 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Update banner
+                _buildUpdateBanner(context),
+
                 // Status Icon
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
@@ -30,7 +34,7 @@ class HomeScreen extends StatelessWidget {
                   height: 160,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: status.color.withOpacity(0.1),
+                    color: status.color.withValues(alpha: 0.1),
                     border: Border.all(
                       color: status.color,
                       width: 4,
@@ -66,7 +70,7 @@ class HomeScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
+                      color: Colors.red.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.red),
                     ),
@@ -91,6 +95,46 @@ class HomeScreen extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUpdateBanner(BuildContext context) {
+    return Consumer<UpdateService>(
+      builder: (context, updates, _) {
+        if (!updates.updateAvailable) return const SizedBox.shrink();
+        final colors = Theme.of(context).colorScheme;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: colors.primaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.system_update_alt, color: colors.onPrimaryContainer),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  AppLocalizations.of(context)!
+                      .homeUpdateAvailable(updates.latestVersion!),
+                  style: TextStyle(color: colors.onPrimaryContainer),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: updates.openReleasePage,
+                child: Text(AppLocalizations.of(context)!.homeUpdateDownload),
+              ),
+              IconButton(
+                icon: Icon(Icons.close, size: 18, color: colors.onPrimaryContainer),
+                onPressed: updates.dismiss,
+              ),
+            ],
           ),
         );
       },
@@ -219,7 +263,7 @@ class HomeScreen extends StatelessWidget {
         final config = await configService.loadConfig();
 
         // Debug: verify config was loaded
-        print('HomeScreen - loaded config: hostname=${config.hostname}, address=${config.address}');
+        debugPrint('HomeScreen - loaded config: hostname=${config.hostname}, address=${config.address}');
 
         await vpnService.connect(config);
       }

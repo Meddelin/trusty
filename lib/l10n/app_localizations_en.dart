@@ -556,4 +556,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String serverError(String error) {
     return 'Error: $error';
   }
+
+  @override
+  String homeUpdateAvailable(String version) {
+    return 'New version available: v$version';
+  }
+
+  @override
+  String get homeUpdateDownload => 'Download';
 }
