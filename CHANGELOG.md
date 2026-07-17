@@ -3,11 +3,17 @@
 ## [0.3.3] - 2026-07-17
 
 ### Added
-- **Update notifications**: The app checks GitHub Releases on startup (and daily) and shows a banner on the Home screen when a newer version is available, with a button that opens the release download page.
+- **Update notifications**: Trusty now checks GitHub Releases for a newer version on startup and once a day while running in the tray. When an update is available, the Home screen shows a dismissible banner with the new version number and a **Download** button that opens the release page in the browser.
+- App version is read from the binary metadata (`package_info_plus`), so the update check always compares against the real built version — no manually maintained version constant.
+- Network or GitHub API failures (offline, rate limit) are silent: the banner simply doesn't appear, and the check retries within a day.
+
+### Changed
+- macOS release workflow no longer marks releases as pre-release: both platform workflows publish into the same release, and a pre-release flag could hide it from `/releases/latest` — the endpoint the update check relies on.
+- Release notes templates in CI updated for 0.3.3.
 
 ### Fixed
 - All static-analysis warnings (unused import, dead code, deprecated `withOpacity`, `print` in production code, redundant string interpolation braces).
-- macOS release workflow no longer marks releases as pre-release, which could hide them from the update check.
+- Removed the stock template widget test that could never pass in this app.
 
 ## [0.3.2] - 2026-06-21
 
