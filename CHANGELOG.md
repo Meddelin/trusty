@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.3] - 2026-07-17
+
+### Added
+- **Update notifications**: The app checks GitHub Releases on startup (and daily) and shows a banner on the Home screen when a newer version is available, with a button that opens the release download page.
+
+### Fixed
+- All static-analysis warnings (unused import, dead code, deprecated `withOpacity`, `print` in production code, redundant string interpolation braces).
+- macOS release workflow no longer marks releases as pre-release, which could hide them from the update check.
+
 ## [0.3.2] - 2026-06-21
 
 ### Fixed

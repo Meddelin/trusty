@@ -34,7 +34,7 @@ class HomeScreen extends StatelessWidget {
                   height: 160,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: status.color.withOpacity(0.1),
+                    color: status.color.withValues(alpha: 0.1),
                     border: Border.all(
                       color: status.color,
                       width: 4,
@@ -70,7 +70,7 @@ class HomeScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
+                      color: Colors.red.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.red),
                     ),
@@ -263,7 +263,7 @@ class HomeScreen extends StatelessWidget {
         final config = await configService.loadConfig();
 
         // Debug: verify config was loaded
-        print('HomeScreen - loaded config: hostname=${config.hostname}, address=${config.address}');
+        debugPrint('HomeScreen - loaded config: hostname=${config.hostname}, address=${config.address}');
 
         await vpnService.connect(config);
       }

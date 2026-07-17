@@ -24,7 +24,7 @@ class ConfigService extends ChangeNotifier {
         return ServerConfig.fromJson(json);
       }
     } catch (e) {
-      print('Error loading config: $e');
+      debugPrint('Error loading config: $e');
     }
 
     // Return default config if loading fails
@@ -36,12 +36,12 @@ class ConfigService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = config.toJson();
-      print('Saving config - vpnMode: ${json['vpnMode']}, domains: ${json['splitTunnelDomains']}, apps: ${json['splitTunnelApps']}');
+      debugPrint('Saving config - vpnMode: ${json['vpnMode']}, domains: ${json['splitTunnelDomains']}, apps: ${json['splitTunnelApps']}');
       final jsonString = jsonEncode(json);
       await prefs.setString(_configKey, jsonString);
       notifyListeners();
     } catch (e) {
-      print('Error saving config: $e');
+      debugPrint('Error saving config: $e');
       rethrow;
     }
   }
@@ -108,8 +108,8 @@ class ConfigService extends ChangeNotifier {
       final configPath = await getConfigFilePath();
       final file = File(configPath);
 
-      print('Config validation: hostname=${config.hostname}, address=${config.address}, username=${config.username}');
-      print('Writing TOML - vpnMode: ${config.vpnMode}, domains: ${config.splitTunnelDomains}, apps: ${config.splitTunnelApps}');
+      debugPrint('Config validation: hostname=${config.hostname}, address=${config.address}, username=${config.username}');
+      debugPrint('Writing TOML - vpnMode: ${config.vpnMode}, domains: ${config.splitTunnelDomains}, apps: ${config.splitTunnelApps}');
 
       // Validate config before generating TOML
       if (config.hostname.isEmpty) {
@@ -125,10 +125,10 @@ class ConfigService extends ChangeNotifier {
       final toml = config.toToml();
       await file.writeAsString(toml);
 
-      print('Config file written successfully to: $configPath');
+      debugPrint('Config file written successfully to: $configPath');
     } catch (e, stackTrace) {
-      print('Error writing config file: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error writing config file: $e');
+      debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -142,7 +142,7 @@ class ConfigService extends ChangeNotifier {
         await file.delete();
       }
     } catch (e) {
-      print('Error deleting config file: $e');
+      debugPrint('Error deleting config file: $e');
     }
   }
 
@@ -153,7 +153,7 @@ class ConfigService extends ChangeNotifier {
       final jsonString = jsonEncode(config.toJson());
       await file.writeAsString(jsonString);
     } catch (e) {
-      print('Error exporting config: $e');
+      debugPrint('Error exporting config: $e');
       rethrow;
     }
   }
@@ -166,7 +166,7 @@ class ConfigService extends ChangeNotifier {
       final json = jsonDecode(jsonString) as Map<String, dynamic>;
       return ServerConfig.fromJson(json);
     } catch (e) {
-      print('Error importing config: $e');
+      debugPrint('Error importing config: $e');
       rethrow;
     }
   }
@@ -182,7 +182,7 @@ class ConfigService extends ChangeNotifier {
         return DomainGroupsData.fromJson(json);
       }
     } catch (e) {
-      print('Error loading domain groups: $e');
+      debugPrint('Error loading domain groups: $e');
     }
 
     return DomainGroupsData();
@@ -195,7 +195,7 @@ class ConfigService extends ChangeNotifier {
       final jsonString = jsonEncode(data.toJson());
       await prefs.setString(_domainGroupsKey, jsonString);
     } catch (e) {
-      print('Error saving domain groups: $e');
+      debugPrint('Error saving domain groups: $e');
       rethrow;
     }
   }

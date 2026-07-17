@@ -219,12 +219,10 @@ jobs:
         run: |
           $cliVersion = (Get-Content ".\cli_version.txt" -Raw).Trim()
           $changelog = @"
-          ## Trusty v0.3.2
+          ## Trusty v0.3.3: Update Notifications 🔔
 
-          Hotfix: connection filtering (client random prefix) now actually works.
-
-          ### 🐛 Fixed
-          - **Connection filtering was broken.** The client config wrote the TLS client random under the wrong key — "client_random_prefix" instead of "client_random" — so the bundled client silently ignored it. Clients could not connect to servers that filter by the prefix: handshakes were rejected and the logs showed "Failed to ping location" / "Number of connection attempts exceeded" (or "QUIC connection closed due to transport error"). The client config now uses the correct "client_random" key, and the server-side prefix is generated in the required prefix/mask form. Servers that don't use filtering were unaffected.
+          ### ✨ New Feature
+          - **The app now tells you about new versions!** Trusty checks GitHub Releases on startup and shows a banner on the Home screen when a newer version is available, with a one-click link to the download page.
 
           ### ✨ What's Included
 

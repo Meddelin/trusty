@@ -118,6 +118,7 @@ jobs:
           ## Trusty (macOS Alpha)
 
           ### ✨ Highlights
+          - **Update notifications!** Trusty checks GitHub Releases on startup and shows a banner on the Home screen when a newer version is available, with a one-click link to the download page.
           - **Deploy your own VPN server directly from the app!** Enter your VPS details in the "Server" tab, and Trusty will automatically connect, install the latest TrustTunnel service, configure certificates, bypass busy ports, and seamlessly apply the settings to your client—all in one click!
 
           ### ✨ What's Included

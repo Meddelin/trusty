@@ -250,7 +250,7 @@ upstream_protocol = "$upProto"
 # Is anti-DPI measures should be enabled
 anti_dpi = $dpi
 # Custom SNI value for TLS handshake (leave empty to use hostname)
-custom_sni = "${customSni}"
+custom_sni = "$customSni"
 
 
 # Defines the way to listen to network traffic by the kind of the nested table.
