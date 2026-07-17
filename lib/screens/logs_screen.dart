@@ -52,69 +52,17 @@ class _LogsScreenState extends State<LogsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The body (list / empty state), the copy & clear buttons' enabled state,
+    // and the footer counter all depend on the logs, which change ~10fps while
+    // logging. Keep only those reactive via the Consumer and hoist the static
+    // chrome (header decoration, title, auto-scroll toggle) into `child` so
+    // Flutter reuses it without rebuilding every tick.
     return Consumer<VpnService>(
       builder: (context, vpnService, child) {
         return Column(
           children: [
-            // Header with controls
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.terminal,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  SizedBox(width: 12),
-                  Text(
-                    AppLocalizations.of(context)!.logsTitle,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const Spacer(),
-                  // Auto-scroll toggle
-                  IconButton(
-                    icon: Icon(
-                      _autoScroll ? Icons.arrow_downward : Icons.arrow_downward_outlined,
-                      color: _autoScroll ? Theme.of(context).colorScheme.primary : null,
-                    ),
-                    tooltip: _autoScroll
-                        ? AppLocalizations.of(context)!.logsAutoScrollEnabled
-                        : AppLocalizations.of(context)!.logsAutoScrollDisabled,
-                    onPressed: () {
-                      setState(() {
-                        _autoScroll = !_autoScroll;
-                      });
-                    },
-                  ),
-                  // Copy logs
-                  IconButton(
-                    icon: Icon(Icons.copy),
-                    tooltip: AppLocalizations.of(context)!.logsCopy,
-                    onPressed: vpnService.logs.isEmpty
-                        ? null
-                        : () => _copyLogs(vpnService.logs),
-                  ),
-                  // Clear logs
-                  IconButton(
-                    icon: Icon(Icons.delete_outline),
-                    tooltip: AppLocalizations.of(context)!.logsClear,
-                    onPressed: vpnService.logs.isEmpty
-                        ? null
-                        : () => _confirmClearLogs(vpnService),
-                  ),
-                ],
-              ),
-            ),
+            // Header with controls (static parts hoisted via `child`)
+            child!,
 
             // Logs content
             Expanded(
@@ -154,6 +102,81 @@ class _LogsScreenState extends State<LogsScreen> {
           ],
         );
       },
+      child: _buildHeader(),
+    );
+  }
+
+  // Static header chrome: title, terminal icon and the auto-scroll toggle.
+  // The copy/clear buttons depend on the log contents, so they stay reactive
+  // inside their own small Consumer rather than rebuilding the whole header.
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.terminal,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          SizedBox(width: 12),
+          Text(
+            AppLocalizations.of(context)!.logsTitle,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const Spacer(),
+          // Auto-scroll toggle
+          IconButton(
+            icon: Icon(
+              _autoScroll ? Icons.arrow_downward : Icons.arrow_downward_outlined,
+              color: _autoScroll ? Theme.of(context).colorScheme.primary : null,
+            ),
+            tooltip: _autoScroll
+                ? AppLocalizations.of(context)!.logsAutoScrollEnabled
+                : AppLocalizations.of(context)!.logsAutoScrollDisabled,
+            onPressed: () {
+              setState(() {
+                _autoScroll = !_autoScroll;
+              });
+            },
+          ),
+          // Copy & clear logs depend on whether there are any logs, so keep
+          // just these two buttons reactive.
+          Consumer<VpnService>(
+            builder: (context, vpnService, _) {
+              final hasLogs = vpnService.logs.isNotEmpty;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Copy logs
+                  IconButton(
+                    icon: Icon(Icons.copy),
+                    tooltip: AppLocalizations.of(context)!.logsCopy,
+                    onPressed:
+                        hasLogs ? () => _copyLogs(vpnService.logs) : null,
+                  ),
+                  // Clear logs
+                  IconButton(
+                    icon: Icon(Icons.delete_outline),
+                    tooltip: AppLocalizations.of(context)!.logsClear,
+                    onPressed:
+                        hasLogs ? () => _confirmClearLogs(vpnService) : null,
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 

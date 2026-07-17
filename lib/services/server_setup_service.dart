@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/setup_step.dart';
 import '../models/server_setup_config.dart';
 import 'config_service.dart';
@@ -40,11 +41,31 @@ class ServerSetupService extends ChangeNotifier {
   SSHClient? _client;
   bool _alreadyInstalled = false;
 
+  // Set when the last connect failed on an SSH host-key mismatch; holds the
+  // prefs key of the stored fingerprint so the UI can offer to forget it
+  // (legitimate case: the user rebuilt the VPS and it has a new host key).
+  String? _mismatchedHostKeyPrefsKey;
+
   // Public getters
   SetupStep get currentStep => _currentStep;
   List<String> get logs => List.unmodifiable(_logs);
   String? get errorMessage => _errorMessage;
   bool get alreadyInstalled => _alreadyInstalled;
+  bool get hostKeyMismatch => _mismatchedHostKeyPrefsKey != null;
+
+  /// Forget the stored fingerprint that caused the last host-key mismatch, so
+  /// the next connection trusts the server's current key. Call only after the
+  /// user explicitly confirmed the key change is expected (e.g. rebuilt VPS).
+  Future<void> trustNewHostKey() async {
+    final key = _mismatchedHostKeyPrefsKey;
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(key);
+    _mismatchedHostKeyPrefsKey = null;
+    _addLog('Forgot saved SSH host key — the next connection will trust '
+        'the new key.');
+    notifyListeners();
+  }
 
   void _setStep(SetupStep step) {
     _currentStep = step;
@@ -137,7 +158,19 @@ class ServerSetupService extends ChangeNotifier {
     _logs.clear();
     _errorMessage = null;
     _alreadyInstalled = false;
+    _mismatchedHostKeyPrefsKey = null;
     notifyListeners();
+
+    // Validate user-controlled values BEFORE any SSH work. domain/email are
+    // interpolated into shell commands run as root, so reject anything that
+    // isn't a clean hostname/email to prevent command injection.
+    final validationError = config.validateForInstall();
+    if (validationError != null) {
+      _errorMessage = validationError;
+      _setStep(SetupStep.failed);
+      _addLog('Error: $validationError');
+      throw Exception(validationError);
+    }
 
     try {
       // Step 1: SSH connect
@@ -174,6 +207,50 @@ class ServerSetupService extends ChangeNotifier {
     }
   }
 
+  /// Format raw fingerprint bytes as colon-separated lowercase hex.
+  String _formatFingerprint(Uint8List bytes) {
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(':');
+  }
+
+  /// Trust-on-first-use (TOFU) SSH host-key verification.
+  ///
+  /// On the first connection to a host:port we record the fingerprint in
+  /// SharedPreferences (keyed `ssh_hostkey_<host>_<port>`) and log it so the
+  /// user can eyeball it. On later connections we compare; a mismatch means a
+  /// possible MITM, so we reject the key (returning false aborts the deploy).
+  /// Public for unit tests.
+  Future<bool> verifyHostKey(
+    ServerSetupConfig config,
+    String type,
+    Uint8List fingerprint,
+  ) async {
+    final fp = _formatFingerprint(fingerprint);
+    final key = 'ssh_hostkey_${config.host}_${config.sshPort}';
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(key);
+
+    if (stored == null) {
+      // First use: trust and remember.
+      await prefs.setString(key, fp);
+      _addLog('Trusting new SSH host key ($type) for '
+          '${config.host}:${config.sshPort}');
+      _addLog('Host key fingerprint (MD5): $fp');
+      return true;
+    }
+
+    if (stored == fp) {
+      _addLog('SSH host key verified ($type)');
+      return true;
+    }
+
+    // Fingerprint changed since first trust: abort (possible MITM).
+    _mismatchedHostKeyPrefsKey = key;
+    _addLog('SSH host key MISMATCH for ${config.host}:${config.sshPort}!');
+    _addLog('  expected: $stored');
+    _addLog('  received: $fp');
+    return false;
+  }
+
   Future<void> _stepConnect(ServerSetupConfig config) async {
     _setStep(SetupStep.connecting);
     _addLog('Connecting to ${config.host}:${config.sshPort}...');
@@ -183,6 +260,10 @@ class ServerSetupService extends ChangeNotifier {
       config.sshPort,
       timeout: const Duration(seconds: 15),
     );
+
+    // TOFU host-key verification to defend against MITM.
+    Future<bool> onVerifyHostKey(String type, Uint8List fingerprint) =>
+        verifyHostKey(config, type, fingerprint);
 
     if (config.useKeyAuth && config.sshKeyPath != null) {
       // Key-based auth
@@ -196,6 +277,7 @@ class ServerSetupService extends ChangeNotifier {
         socket,
         username: config.sshUsername,
         identities: SSHKeyPair.fromPem(keyContent),
+        onVerifyHostKey: onVerifyHostKey,
       );
     } else {
       // Password auth
@@ -203,7 +285,18 @@ class ServerSetupService extends ChangeNotifier {
         socket,
         username: config.sshUsername,
         onPasswordRequest: () => config.sshPassword,
+        onVerifyHostKey: onVerifyHostKey,
       );
+    }
+
+    // Wait for auth so a host-key rejection surfaces here as a clear error.
+    try {
+      await _client!.authenticated;
+    } on SSHHostkeyError {
+      throw Exception(
+          'SSH host key changed — possible MITM. Aborting. '
+          'If you intentionally rebuilt ${config.host}, press '
+          '"Trust new host key & retry" below.');
     }
 
     _addLog('SSH connection established');

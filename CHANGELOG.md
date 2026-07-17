@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.3.3] - 2026-07-17
+
+### Security
+- **TOML injection** — escape quotes/newlines/backslashes in all interpolated values (passwords, usernames, hostnames, domains, DNS, exclusions, SNI) in both the client config and the generated server configs, so a crafted value can't inject extra config keys.
+- **Command injection** — validate `domain`/`email` (hostname/email shape + reject shell metacharacters) before they're used in root SSH commands during server deployment.
+- **SSH MITM** — trust-on-first-use host-key verification for server deployment: the fingerprint is stored on first connect and a later mismatch aborts the deploy. A "Trust new host key & retry" button recovers when the change is expected (e.g. a rebuilt VPS).
+- **macOS sudoers injection** — reject binary paths/usernames containing shell metacharacters or whitespace before writing the NOPASSWD sudoers rule, plus quote-escaping as defense in depth. The rule is now validated by `visudo` in a staging file (`trusty.tmp`, ignored by sudo) and only moved into place when valid, so a bad rule can never break sudo.
+- **Credential storage** — the VPN password is now kept in the OS keystore (Windows DPAPI / macOS Keychain) instead of plaintext `SharedPreferences`; existing plaintext is migrated, and the generated config file is `chmod 600` (non-Windows). A keystore read failure degrades to an empty password instead of resetting the whole saved configuration.
+- **TLS** — domain discovery no longer accepts invalid certificates; a warning is shown when "skip certificate verification" is enabled.
+
+### Performance
+- **Instant disconnect** — the client process is terminated immediately and the UI flips back to "Connect" right away; the Wintun adapter-release wait (Windows) is deferred and paid lazily at the start of the next connect, where it has usually already elapsed.
+- **Faster connect** — the app watches the client output for a tunnel-up marker instead of sleeping a fixed 2 s, so the status turns "Connected" as soon as the tunnel is actually up (5 s fallback if no marker appears).
+- **Snappier app exit** — quitting no longer blocks on the adapter-release wait.
+- **Split Tunnel** — the installed-apps list loads lazily on first open of the Apps tab and the filesystem scan runs off the UI thread; log-based domain suggestions are debounced (500 ms batches) with a cached domain set instead of a per-line rescan.
+- **Logs screen** — static header chrome no longer rebuilds on every incoming log line.
+
+### Added
+- **Close-window behavior** — the close dialog has a "Remember my choice" checkbox, and a new "On window close" setting (ask / minimize / exit) in Settings → Advanced lets you change the remembered choice later.
+- **Tray sync** — the tray menu and tooltip now follow VPN status changes regardless of where they originate (Home screen button, tray, process exit).
+
+### Fixed
+- A stale process-exit handler could clear the active connection state (and the new process reference) during a fast disconnect→reconnect.
+- Cancelling while the adapter-release wait was pending no longer launches the client afterwards.
+
 ## [0.3.2] - 2026-06-21
 
 ### Fixed

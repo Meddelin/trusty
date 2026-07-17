@@ -514,6 +514,22 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                   ],
                 ),
               ),
+              // Recovery path for a legitimate host-key change (rebuilt VPS):
+              // forget the stored fingerprint and immediately retry the install.
+              if (service.hostKeyMismatch) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.key_off, size: 18),
+                    label: const Text('Trust new host key & retry'),
+                    onPressed: () async {
+                      await service.trustNewHostKey();
+                      await _startInstallation();
+                    },
+                  ),
+                ),
+              ],
             ],
           ],
         ),

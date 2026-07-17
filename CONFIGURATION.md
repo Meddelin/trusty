@@ -104,6 +104,11 @@ action = "deny"
 - Try connecting manually: `ssh root@your-vps-ip`
 - If using a key, ensure it's in OpenSSH format (not PuTTY .ppk)
 
+**"SSH host key changed — possible MITM":**
+- Trusty pins the server's SSH host key on first connect (trust-on-first-use) and refuses to continue if it later changes
+- If you rebuilt or reinstalled the VPS, the new key is expected — press **Trust new host key & retry**
+- If you did NOT change the server, do not continue: someone may be intercepting the connection
+
 **Certificate fails ("DNS problem"):**
 - Ensure the domain's A-record points to the VPS IP
 - DNS propagation may take up to 24 hours
@@ -183,7 +188,7 @@ Your VPN account password.
 
 **Security best practices:**
 - Use a strong, unique password
-- Store passwords securely (the GUI uses encrypted local storage)
+- Trusty stores the password in the OS keystore (Windows DPAPI / macOS Keychain), never in plain text; the generated client config file is restricted to your user account
 - Don't share passwords or commit them to version control
 - Consider using a password manager to generate strong passwords
 
@@ -315,6 +320,17 @@ Controls verbosity of client logs.
 - Use **info** for normal operation
 - Use **debug** or **trace** when troubleshooting
 - Use **error** or **warn** for production with minimal logs
+
+### On Window Close
+
+Controls what happens when you close the main window.
+
+**Options:**
+- **ask** (default): show a dialog each time (it has a "Remember my choice" checkbox)
+- **minimize**: hide to the system tray, VPN keeps running
+- **exit**: disconnect the VPN and quit the app
+
+Applied immediately — this setting is not part of the server configuration and doesn't need Save.
 
 ## Split Tunneling
 

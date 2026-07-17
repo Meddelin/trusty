@@ -219,12 +219,26 @@ jobs:
         run: |
           $cliVersion = (Get-Content ".\cli_version.txt" -Raw).Trim()
           $changelog = @"
-          ## Trusty v0.3.2
+          ## Trusty v0.3.3
 
-          Hotfix: connection filtering (client random prefix) now actually works.
+          Security hardening plus instant connect/disconnect.
 
-          ### 🐛 Fixed
-          - **Connection filtering was broken.** The client config wrote the TLS client random under the wrong key — "client_random_prefix" instead of "client_random" — so the bundled client silently ignored it. Clients could not connect to servers that filter by the prefix: handshakes were rejected and the logs showed "Failed to ping location" / "Number of connection attempts exceeded" (or "QUIC connection closed due to transport error"). The client config now uses the correct "client_random" key, and the server-side prefix is generated in the required prefix/mask form. Servers that don't use filtering were unaffected.
+          ### 🔒 Security
+          - **TOML injection** — all interpolated values (passwords, usernames, hostnames, domains, DNS, SNI) are escaped in client and server configs, so a crafted value can't inject config keys.
+          - **Command injection** — domain/email are validated (and shell metacharacters rejected) before they reach the root SSH commands run during server deployment.
+          - **SSH MITM** — trust-on-first-use host-key verification: the fingerprint is remembered on first connect and a mismatch aborts the deploy, with a one-click "Trust new host key" recovery for a rebuilt VPS.
+          - **macOS sudoers** — the binary path/username are validated before the NOPASSWD rule is written, and the rule is verified by visudo in a staging file before it can take effect.
+          - **Credential storage** — the VPN password is stored in the OS keystore (Windows DPAPI / macOS Keychain) instead of plaintext; existing plaintext is migrated and the config file is locked to the owner.
+          - **TLS** — domain discovery no longer accepts invalid certificates; a warning is shown when certificate verification is disabled.
+
+          ### ⚡ Performance
+          - **Disconnect is instant** — no more multi-second freeze; the Wintun release wait is paid invisibly before the next connect instead.
+          - **Connect completes as soon as the tunnel is up** — no fixed 2-second sleep.
+          - **Faster UI** — app list loads lazily off the UI thread, log screens rebuild less, quitting the app is immediate.
+
+          ### ✨ UX
+          - The close-window dialog can remember your choice; change it later via Settings → "On window close".
+          - Tray menu and tooltip always reflect the current VPN status.
 
           ### ✨ What's Included
 

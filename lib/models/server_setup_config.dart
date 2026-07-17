@@ -72,6 +72,65 @@ class ServerSetupConfig {
     );
   }
 
+  /// Escape a string for safe inclusion inside a TOML basic string ("...").
+  /// Prevents injection of config keys or breaking the TOML structure
+  /// when an interpolated value contains quotes, backslashes or newlines.
+  String _tomlEscape(String s) {
+    return s
+        .replaceAll('\\', '\\\\')
+        .replaceAll('"', '\\"')
+        .replaceAll('\n', '\\n')
+        .replaceAll('\r', '\\r')
+        .replaceAll('\t', '\\t');
+  }
+
+  /// Validate user-controlled fields before they are interpolated into shell
+  /// commands run as root over SSH. Returns an error message, or null if OK.
+  ///
+  /// This is the primary mitigation for command injection via `domain`/`email`:
+  /// `domain` must be a valid hostname and `email` a simple address, and
+  /// neither may contain shell metacharacters (belt-and-suspenders check).
+  String? validateForInstall() {
+    // Reject any shell metacharacter outright as a defense-in-depth check.
+    final shellMeta = RegExp(r'''[;&|`$(){}<>\\'"\s*?\[\]!#~]''');
+
+    final d = domain.trim();
+    if (d.isEmpty) {
+      return 'Domain cannot be empty.';
+    }
+    if (d.length > 253) {
+      return 'Domain is too long.';
+    }
+    if (shellMeta.hasMatch(d)) {
+      return 'Domain contains invalid characters.';
+    }
+    // Hostname: dot-separated labels of 1-63 chars, alphanumeric with
+    // internal hyphens, no leading/trailing dot or hyphen.
+    final hostnameRegex = RegExp(
+        r'^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$');
+    if (!hostnameRegex.hasMatch(d)) {
+      return 'Invalid domain: $domain';
+    }
+
+    final e = email.trim();
+    if (e.isEmpty) {
+      return 'Email cannot be empty.';
+    }
+    if (e.length > 254) {
+      return 'Email is too long.';
+    }
+    if (shellMeta.hasMatch(e)) {
+      return 'Email contains invalid characters.';
+    }
+    // Simple, conservative email check.
+    final emailRegex = RegExp(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');
+    if (!emailRegex.hasMatch(e)) {
+      return 'Invalid email: $email';
+    }
+
+    return null;
+  }
+
   /// Generate vpn.toml content
   String generateVpnToml() {
     final rules = generateClientRandomPrefix
@@ -102,15 +161,16 @@ class ServerSetupConfig {
   /// Generate credentials.toml content
   String generateCredentialsToml() {
     return '[[client]]\n'
-        'username = "$vpnUsername"\n'
-        'password = "$vpnPassword"\n';
+        'username = "${_tomlEscape(vpnUsername)}"\n'
+        'password = "${_tomlEscape(vpnPassword)}"\n';
   }
 
   /// Generate hosts.toml content
   String generateHostsToml() {
+    final d = _tomlEscape(domain);
     return '[[main_hosts]]\n'
-        'hostname = "$domain"\n'
-        'cert_chain_path = "/etc/letsencrypt/live/$domain/fullchain.pem"\n'
-        'private_key_path = "/etc/letsencrypt/live/$domain/privkey.pem"\n';
+        'hostname = "$d"\n'
+        'cert_chain_path = "/etc/letsencrypt/live/$d/fullchain.pem"\n'
+        'private_key_path = "/etc/letsencrypt/live/$d/privkey.pem"\n';
   }
 }

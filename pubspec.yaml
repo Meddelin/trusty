@@ -1,7 +1,7 @@
 name: trusty
 description: "Cross-platform GUI client for TrustTunnel VPN"
 publish_to: "none"
-version: 0.3.2+3
+version: 0.3.3+4
 homepage: https://github.com/Meddelin/trusty
 repository: https://github.com/Meddelin/trusty
 issue_tracker: https://github.com/Meddelin/trusty/issues
@@ -24,6 +24,9 @@ dependencies:
 
   # Local Storage
   shared_preferences: ^2.3.3
+
+  # Secure storage for credentials (Windows DPAPI / macOS Keychain)
+  flutter_secure_storage: ^9.2.2
 
   # Path utilities
   path: ^1.9.1

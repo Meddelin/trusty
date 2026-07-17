@@ -22,7 +22,41 @@ class VpnService extends ChangeNotifier {
   String? _lastMsgPattern;
   int _dupCount = 0;
 
+  /// On Windows, the Wintun adapter takes a few seconds to release after the
+  /// client process dies. Instead of blocking the foreground during disconnect,
+  /// we record when the adapter is expected to be free and pay that cost lazily
+  /// at the start of the NEXT connect() (usually already elapsed → no wait).
+  DateTime? _adapterBusyUntil;
+
+  /// How long the Wintun adapter is assumed to stay busy after the process dies.
+  static const Duration _adapterReleaseDuration = Duration(seconds: 5);
+
+  /// Stdout/stderr markers the CLI prints once the tunnel is actually up.
+  /// Verified from real CLI logs.
+  static const List<String> _connectedMarkers = [
+    'VPN_SS_CONNECTED',
+    'Successfully connected to endpoint',
+  ];
+
   VpnService(this._configService);
+
+  /// Remaining time to wait for the Wintun adapter to release, given the
+  /// recorded busy-until timestamp and the current time. Pure and clamped to
+  /// zero so it never returns a negative duration. Returns [Duration.zero] when
+  /// no disconnect is pending (busyUntil == null) or the window has elapsed.
+  static Duration remainingAdapterWait(DateTime? busyUntil, DateTime now) {
+    if (busyUntil == null) return Duration.zero;
+    final remaining = busyUntil.difference(now);
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  /// True if [line] contains a marker indicating the tunnel is up.
+  static bool isConnectedMarker(String line) {
+    for (final marker in _connectedMarkers) {
+      if (line.contains(marker)) return true;
+    }
+    return false;
+  }
 
   VpnStatus get status => _status;
   List<String> get logs => List.unmodifiable(_logs);
@@ -97,6 +131,26 @@ class VpnService extends ChangeNotifier {
       _addLog('📝 Creating configuration file...');
       await _configService.writeConfigFile(config);
 
+      // Pay the deferred Wintun-release cost (if any) right before launching.
+      // disconnect() returns instantly and records _adapterBusyUntil; the wait
+      // for the adapter to free up is paid here, lazily, and is usually already
+      // elapsed (so this is a no-op) unless this is a fast disconnect→reconnect.
+      final adapterWait =
+          remainingAdapterWait(_adapterBusyUntil, DateTime.now());
+      if (adapterWait > Duration.zero) {
+        _addLog('⏳ Waiting for Wintun adapter to release...');
+        await Future.delayed(adapterWait);
+        _addLog('✅ Wintun adapter should be free now');
+      }
+      _adapterBusyUntil = null;
+
+      // disconnect() may have been called while we waited — don't launch a
+      // process the user has already cancelled.
+      if (_status != VpnStatus.connecting) {
+        _addLog('ℹ️ Connection cancelled before launch');
+        return;
+      }
+
       // Start process
       _addLog('🚀 Starting Trusty client...');
 
@@ -150,11 +204,19 @@ class VpnService extends ChangeNotifier {
       // Store process reference for listeners
       final process = _process!;
 
+      // Fresh readiness signal for this attempt. Completed when the CLI prints
+      // a "tunnel up" marker on stdout/stderr (see _connectedMarkers).
+      final connectedSignal = Completer<void>();
+
       // Listen to stdout
       process.stdout.transform(utf8.decoder).listen((data) {
         for (final line in data.split('\n')) {
-          if (line.trim().isNotEmpty) {
-            _addLog(line.trim());
+          final trimmed = line.trim();
+          if (trimmed.isNotEmpty) {
+            _addLog(trimmed);
+            if (!connectedSignal.isCompleted && isConnectedMarker(trimmed)) {
+              connectedSignal.complete();
+            }
           }
         }
       });
@@ -162,26 +224,37 @@ class VpnService extends ChangeNotifier {
       // Listen to stderr
       process.stderr.transform(utf8.decoder).listen((data) {
         for (final line in data.split('\n')) {
-          if (line.trim().isNotEmpty) {
-            _addLog(_formatLogLine(line.trim()));
+          final trimmed = line.trim();
+          if (trimmed.isNotEmpty) {
+            _addLog(_formatLogLine(trimmed));
+            if (!connectedSignal.isCompleted && isConnectedMarker(trimmed)) {
+              connectedSignal.complete();
+            }
           }
         }
       });
 
-      // Wait a bit to check if process starts successfully
+      // Race three outcomes instead of sleeping a fixed 2s:
+      //   1. a readiness marker on stdout/stderr → connected (usually fast),
+      //   2. the process exits → startup error (handled below),
+      //   3. a timeout fallback → assume connected if still alive (safety net).
+      // _RaceResult encodes which arm won so we can branch without re-querying.
       if (kDebugMode) {
-        print('Waiting 2 seconds for process to initialize...');
+        print('Waiting for readiness marker / early exit...');
       }
-      await Future.delayed(const Duration(seconds: 2));
+      const readinessTimeout = Duration(seconds: 5);
+      final outcome = await Future.any<_RaceResult>([
+        connectedSignal.future.then((_) => _RaceResult.connected),
+        process.exitCode.then((code) => _RaceResult.exited(code)),
+        Future<_RaceResult>.delayed(
+          readinessTimeout,
+          () => _RaceResult.timeout,
+        ),
+      ]);
 
-      // Check if process already exited (error during startup)
-      if (kDebugMode) {
-        print('Checking if process exited...');
-      }
-      bool processExited = false;
-      try {
-        final exitCode = await process.exitCode.timeout(const Duration(milliseconds: 100));
-        processExited = true;
+      bool processExited = outcome.kind == _RaceOutcome.exited;
+      if (processExited) {
+        final exitCode = outcome.exitCode!;
 
         if (kDebugMode) {
           print('Process exited with code: $exitCode');
@@ -244,21 +317,27 @@ class VpnService extends ChangeNotifier {
         }
 
         throw Exception('Process exited immediately after start');
-      } on TimeoutException {
-        // Process is still running - good!
-        processExited = false;
       }
 
+      // Process is still alive: either a readiness marker arrived (fast path)
+      // or the timeout fallback fired with the process still running.
       if (!processExited && _status == VpnStatus.connecting) {
-        // Setup exit handler for later
-        process.exitCode.then((code) async {
+        // Setup exit handler for later (covers the process dying while connected,
+        // e.g. the link drops). The adapter-busy cost is deferred to the next
+        // connect() via _adapterBusyUntil rather than blocking here.
+        process.exitCode.then((code) {
+          // Stale-handler guard: if disconnect() already cleared _process or a
+          // new connect() replaced it, this exit belongs to an old process —
+          // touching shared state here would wipe the new process reference
+          // and flip a live connection back to "disconnected".
+          if (!identical(_process, process)) return;
           _addLog('🛑 Process exited with code: $code');
           _process = null;
           _lastMsgPattern = null;
           _dupCount = 0;
-
-          // Wait for Wintun to release
-          await Future.delayed(const Duration(seconds: 3));
+          if (Platform.isWindows) {
+            _adapterBusyUntil = DateTime.now().add(_adapterReleaseDuration);
+          }
 
           if (_status == VpnStatus.connected) {
             _setStatus(VpnStatus.disconnected);
@@ -310,46 +389,29 @@ class VpnService extends ChangeNotifier {
 
       final currentProcess = _process;
       if (currentProcess != null) {
-        // Try graceful shutdown first (SIGTERM)
+        // Kill immediately and flip the UI back to "Connect" without lingering.
+        // On Windows, kill() maps to TerminateProcess, which is effectively
+        // synchronous, so there is no point waiting for a graceful exit. On
+        // macOS we send SIGTERM (the client cleans up the utun device on it).
         _addLog('📤 Sending termination signal...');
-
         try {
-          currentProcess.kill(ProcessSignal.sigterm);
-        } catch (e) {
-          _addLog('⚠️ Failed to send SIGTERM: $e');
-        }
-
-        // Wait for graceful shutdown (3 seconds)
-        bool exited = false;
-        try {
-          await currentProcess.exitCode.timeout(
-            const Duration(seconds: 3),
+          currentProcess.kill(
+            Platform.isWindows ? ProcessSignal.sigkill : ProcessSignal.sigterm,
           );
-          exited = true;
-          _addLog('✅ Process terminated gracefully');
         } catch (e) {
-          // Timeout - process didn't exit gracefully
-          _addLog('⚠️ Process did not terminate gracefully, forcing shutdown...');
-          exited = false;
+          _addLog('⚠️ Failed to terminate process: $e');
         }
 
-        // If still running, force kill
-        if (!exited) {
-          try {
-            currentProcess.kill(ProcessSignal.sigkill);
-
-            // Wait for force kill (2 seconds max)
-            await currentProcess.exitCode.timeout(
-              const Duration(seconds: 2),
-            );
-            _addLog('✅ Process force terminated');
-          } catch (e) {
-            _addLog('⚠️ Process not responding: $e');
-          }
+        // Defer the Wintun-release cost: the adapter is busy for a few seconds
+        // after the process dies, but we do NOT block here. The wait (if still
+        // pending) is paid lazily at the start of the next connect().
+        if (Platform.isWindows) {
+          _adapterBusyUntil = DateTime.now().add(_adapterReleaseDuration);
         }
 
-        // Process reference will be cleared by exitCode handler
-        // Don't set _process = null here to avoid race condition
+        // The exitCode handler installed in connect() clears _process; clear it
+        // here too so a subsequent connect() doesn't see a stale reference.
+        _process = null;
       } else {
         // No process to kill, just clean up state
         _addLog('ℹ️ Process already terminated');
@@ -357,13 +419,6 @@ class VpnService extends ChangeNotifier {
 
       // Don't delete config file - keep it for next connection
       // await _configService.deleteConfigFile();
-
-      // Wait for TUN adapter to release
-      if (Platform.isWindows) {
-        // CRITICAL: Wintun adapter needs 5+ seconds to fully release
-        _addLog('⏳ Waiting for Wintun adapter to release...');
-        await Future.delayed(const Duration(seconds: 5));
-      }
 
       _addLog('✅ Disconnected');
       _setStatus(VpnStatus.disconnected);
@@ -392,6 +447,28 @@ class VpnService extends ChangeNotifier {
     return result.exitCode == 0;
   }
 
+  /// Returns a human-readable reason if [s] contains characters that are unsafe
+  /// to embed in a root shell command, or null if it is safe.
+  ///
+  /// The sudoers rule we build is executed as ROOT via `osascript ... with
+  /// administrator privileges`. Any of these characters could break out of the
+  /// surrounding shell quoting and run arbitrary commands as root, so we reject
+  /// them outright rather than try to escape every edge case.
+  static String? sudoersUnsafeReason(String s) {
+    // Whitespace is rejected too: sudoers cannot express an unescaped space in
+    // a command path, so a value with one would fail visudo validation.
+    const dangerous = [
+      '\'', '"', '\n', '\r', '\t', ' ', '`', r'$', ';', '|', '&', '\\'
+    ];
+    const names = {'\n': r'\n', '\r': r'\r', '\t': 'tab', ' ': 'space'};
+    for (final c in dangerous) {
+      if (s.contains(c)) {
+        return 'contains an unsupported character (${names[c] ?? c})';
+      }
+    }
+    return null;
+  }
+
   /// Ensure passwordless sudo is configured for the client binary. If not,
   /// prompt once via the macOS password dialog (osascript) and write a
   /// NOPASSWD sudoers rule for this exact binary path, validated by visudo.
@@ -401,11 +478,33 @@ class VpnService extends ChangeNotifier {
     _addLog('🔐 One-time setup: requesting administrator access to enable VPN tunnel...');
 
     final user = Platform.environment['USER'] ?? '';
+
+    // Validate before any value reaches the root shell. exePath is an absolute
+    // path to the bundled client binary and user is the login name; neither
+    // should contain shell metacharacters. Rejecting them here closes the
+    // injection entirely (the dangerous chars can never reach the root shell).
+    final userReason = sudoersUnsafeReason(user);
+    if (userReason != null) {
+      throw Exception('Cannot set up VPN privileges: your username $userReason.');
+    }
+    final pathReason = sudoersUnsafeReason(exePath);
+    if (pathReason != null) {
+      throw Exception(
+          'Cannot set up VPN privileges: the app path $pathReason.\nPlease move the app to a path without special characters (e.g. /Applications) and try again.');
+    }
+
     final rule = '$user ALL=(ALL) NOPASSWD: $exePath';
-    // Write the rule to /etc/sudoers.d/trusty, lock its perms, and validate it
-    // with visudo before it can take effect (a bad sudoers file is dangerous).
+    // Belt-and-suspenders: even though validation above already rejected single
+    // quotes, escape them with the standard `'\''` trick so the value embeds
+    // literally inside the single-quoted echo and is never re-interpreted.
+    final escapedRule = rule.replaceAll('\'', '\'\\\'\'');
+    // Write the rule to a staging file, validate with visudo, and only then
+    // move it into place. Sudo ignores #includedir files whose name contains a
+    // dot, so a rule that fails validation can never take effect (or break
+    // sudo system-wide) — the old atomic-write-then-validate order left an
+    // invalid file live in /etc/sudoers.d on visudo failure.
     final inner =
-        "echo '$rule' > /etc/sudoers.d/trusty && chmod 440 /etc/sudoers.d/trusty && visudo -cf /etc/sudoers.d/trusty";
+        "echo '$escapedRule' > /etc/sudoers.d/trusty.tmp && chmod 440 /etc/sudoers.d/trusty.tmp && visudo -cf /etc/sudoers.d/trusty.tmp && mv /etc/sudoers.d/trusty.tmp /etc/sudoers.d/trusty";
     final osaArg =
         'do shell script "${inner.replaceAll('"', '\\"')}" with administrator privileges';
 
@@ -499,8 +598,11 @@ class VpnService extends ChangeNotifier {
     }
   }
 
-  /// Graceful shutdown - call before app exit
-  /// This method ensures VPN process is terminated and Wintun adapter is released
+  /// Graceful shutdown - call before app exit.
+  /// Kills the client process and returns immediately. There is no Wintun
+  /// release wait here: the OS frees the adapter as the process dies, and the
+  /// next app launch is always far more than the release window away, so
+  /// blocking app exit for it only makes quitting feel sluggish.
   Future<void> shutdown() async {
     final currentProcess = _process;
     if (currentProcess != null) {
@@ -509,55 +611,22 @@ class VpnService extends ChangeNotifier {
       }
       _addLog('🔄 Shutting down...');
 
-      // Try graceful shutdown first
+      // Kill hard — we are exiting and don't wait for the process to drain.
       try {
-        currentProcess.kill(ProcessSignal.sigterm);
+        currentProcess.kill(
+          Platform.isWindows ? ProcessSignal.sigkill : ProcessSignal.sigterm,
+        );
         if (kDebugMode) {
-          print('Shutdown: sent SIGTERM');
+          print('Shutdown: sent kill signal');
         }
       } catch (e) {
-        _addLog('⚠️ Error sending SIGTERM: $e');
-      }
-
-      // Wait for graceful exit
-      bool exited = false;
-      try {
-        await currentProcess.exitCode.timeout(const Duration(seconds: 3));
-        _addLog('✅ Client terminated gracefully');
-        exited = true;
+        _addLog('⚠️ Error terminating process: $e');
         if (kDebugMode) {
-          print('Shutdown: process exited gracefully');
-        }
-      } catch (e) {
-        // Force kill if graceful shutdown failed
-        if (kDebugMode) {
-          print('Shutdown: graceful exit timeout, forcing kill');
-        }
-        try {
-          currentProcess.kill(ProcessSignal.sigkill);
-          await currentProcess.exitCode.timeout(const Duration(seconds: 2));
-          exited = true;
-          if (kDebugMode) {
-            print('Shutdown: process force killed');
-          }
-        } catch (_) {
-          _addLog('⚠️ Failed to terminate process');
-          if (kDebugMode) {
-            print('Shutdown: force kill failed');
-          }
+          print('Shutdown: kill failed: $e');
         }
       }
 
       _process = null;
-
-      // Wait for TUN adapter to release if process was killed
-      if (exited && Platform.isWindows) {
-        if (kDebugMode) {
-          print('Shutdown: waiting for Wintun release (5 sec)...');
-        }
-        _addLog('⏳ Waiting for Wintun adapter to release...');
-        await Future.delayed(const Duration(seconds: 5));
-      }
     }
 
     _setStatus(VpnStatus.disconnected);
@@ -597,4 +666,20 @@ class VpnService extends ChangeNotifier {
     _process = null;
     super.dispose();
   }
+}
+
+/// Which arm of the connect() readiness race won.
+enum _RaceOutcome { connected, exited, timeout }
+
+/// Result of the connect() readiness race (see [VpnService.connect]).
+/// Carries the exit code only when the process-exit arm won.
+class _RaceResult {
+  final _RaceOutcome kind;
+  final int? exitCode;
+
+  const _RaceResult._(this.kind, this.exitCode);
+
+  static const _RaceResult connected = _RaceResult._(_RaceOutcome.connected, null);
+  static const _RaceResult timeout = _RaceResult._(_RaceOutcome.timeout, null);
+  factory _RaceResult.exited(int code) => _RaceResult._(_RaceOutcome.exited, code);
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/server_config.dart';
 import '../models/vpn_status.dart';
 import '../services/config_service.dart';
@@ -33,6 +34,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _logLevel = 'info';
   bool _passwordVisible = false;
   bool _isLoading = true;
+  // App behavior on window close: 'ask' (default), 'minimize', or 'exit'.
+  // Stored in SharedPreferences (same key the close dialog persists to), so
+  // the "Remember my choice" checkbox can be changed here later.
+  String _closeAction = 'ask';
 
   late ConfigService _configService;
 
@@ -51,6 +56,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _configService = context.read<ConfigService>();
     _configService.addListener(_onConfigChanged);
     _loadConfig();
+    _loadCloseAction();
+  }
+
+  Future<void> _loadCloseAction() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _closeAction = prefs.getString('close_action') ?? 'ask';
+    });
   }
 
   void _onConfigChanged() {
@@ -346,6 +360,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     });
                   },
                 ),
+                if (_skipVerification)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Disabling certificate verification accepts any server '
+                            'certificate, exposing all tunneled traffic to interception '
+                            '(man-in-the-middle). Only enable this for debugging.',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 _buildSwitch(
                   title: AppLocalizations.of(context)!.settingsAntiDpi,
                   value: _antiDpi,
@@ -372,6 +411,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: AppLocalizations.of(context)!.settingsCustomSni,
                   icon: Icons.security,
                   enabled: !isConnected,
+                ),
+                SizedBox(height: 16),
+                // App-level setting, applied immediately (not part of the
+                // server config, so the Save button doesn't touch it).
+                _buildDropdown(
+                  value: _closeAction,
+                  label: 'On window close',
+                  icon: Icons.cancel_presentation,
+                  items: const ['ask', 'minimize', 'exit'],
+                  onChanged: (value) async {
+                    final v = value ?? 'ask';
+                    setState(() {
+                      _closeAction = v;
+                    });
+                    final prefs = await SharedPreferences.getInstance();
+                    if (v == 'ask') {
+                      await prefs.remove('close_action');
+                    } else {
+                      await prefs.setString('close_action', v);
+                    }
+                  },
                 ),
 
                 const SizedBox(height: 32),

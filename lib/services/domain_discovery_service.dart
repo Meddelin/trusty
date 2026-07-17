@@ -80,9 +80,10 @@ class DomainDiscoveryService {
   }
 
   Future<String?> _fetchPage(String domain) async {
+    // Use default TLS certificate validation; a cert error simply means
+    // discovery failed for that site (handled by the try/catch below).
     final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: _timeoutSeconds)
-      ..badCertificateCallback = (cert, host, port) => true; // ignore cert errors for discovery
+      ..connectionTimeout = const Duration(seconds: _timeoutSeconds);
 
     try {
       final uri = Uri.parse('https://$domain');

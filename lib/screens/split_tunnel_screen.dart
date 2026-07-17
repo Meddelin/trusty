@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/server_config.dart';
@@ -30,6 +32,8 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
   final TextEditingController _domainController = TextEditingController();
   List<InstalledApp> _installedApps = [];
   bool _isLoadingApps = false;
+  // Whether app discovery has already run (Fix #2: lazy + cached).
+  bool _appsLoaded = false;
   String _appSearchQuery = '';
 
   final DomainDiscoveryService _discoveryService = DomainDiscoveryService();
@@ -37,18 +41,34 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
   // Suggestions from log monitoring
   final List<String> _suggestions = [];
 
+  // Fix #3: cached lower-cased set of current domains, rebuilt only when the
+  // domain data actually changes (not per log line), plus a debounce buffer.
+  Set<String> _currentDomainsCache = <String>{};
+  final List<String> _pendingLogLines = [];
+  Timer? _logDebounceTimer;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // Fix #2: lazily load installed apps the first time the Apps tab is opened.
+    _tabController.addListener(_onTabChanged);
     _loadConfig();
-    _loadInstalledApps();
+  }
+
+  void _onTabChanged() {
+    // index 1 == Apps tab. Trigger discovery on first switch only.
+    if (_tabController.index == 1 && !_appsLoaded && !_isLoadingApps) {
+      _loadInstalledApps();
+    }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _domainController.dispose();
+    _logDebounceTimer?.cancel();
     _stopLogMonitoring();
     super.dispose();
   }
@@ -68,6 +88,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       _isLoading = false;
     });
 
+    _rebuildDomainsCache();
     _startLogMonitoring();
   }
 
@@ -83,29 +104,40 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     } catch (_) {}
   }
 
+  /// Fix #3: buffer log lines and process them on a debounce timer instead of
+  /// running a regex + Set rebuild synchronously on every single line.
   void _onLogLine(String line) {
-    // Extract domain-like patterns from log lines
-    final domainPattern = RegExp(r'(?:[\w-]+\.)+[a-zA-Z]{2,}');
-    final matches = domainPattern.allMatches(line);
+    _pendingLogLines.add(line);
+    _logDebounceTimer ??= Timer(const Duration(milliseconds: 500), _flushLogLines);
+  }
 
-    final currentDomains = _getAllCurrentDomains();
+  void _flushLogLines() {
+    _logDebounceTimer = null;
+    if (_pendingLogLines.isEmpty) return;
 
-    final newSuggestions = <String>[];
-    for (final match in matches) {
-      final domain = match.group(0)!.toLowerCase();
-      if (currentDomains.contains(domain)) continue;
-      if (_suggestions.contains(domain)) continue;
-      if (domain.endsWith('.local') || domain.endsWith('.internal')) continue;
-      if (domain == 'trusttunnel.com') continue;
-      if (_suggestions.length + newSuggestions.length < 20) {
-        newSuggestions.add(domain);
-      }
-    }
-    if (newSuggestions.isNotEmpty) {
+    final lines = List<String>.from(_pendingLogLines);
+    _pendingLogLines.clear();
+
+    // Use the cached current-domains Set (rebuilt only on data mutation).
+    final newSuggestions = extractDomainSuggestions(
+      lines,
+      existingDomains: _currentDomainsCache,
+      existingSuggestions: _suggestions,
+      remainingSlots: 20 - _suggestions.length,
+    );
+
+    if (newSuggestions.isNotEmpty && mounted) {
       setState(() {
         _suggestions.addAll(newSuggestions);
       });
     }
+  }
+
+  /// Rebuild the cached lower-cased set of all current domains. Call this only
+  /// when the underlying domain data changes (add/remove/import/save), not per
+  /// log line.
+  void _rebuildDomainsCache() {
+    _currentDomainsCache = _getAllCurrentDomains();
   }
 
   Set<String> _getAllCurrentDomains() {
@@ -131,198 +163,29 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     });
 
     try {
-      final apps = await _getInstalledApps();
+      // Fix #2: run the heavy filesystem walk off the UI isolate.
+      final apps = await Isolate.run(_discoverInstalledApps);
+      if (!mounted) return;
       setState(() {
         _installedApps = apps;
         _isLoadingApps = false;
+        _appsLoaded = true;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoadingApps = false;
+        // Mark as loaded so we don't keep retrying a failing scan on every
+        // tab switch; the user can still search the (empty) list.
+        _appsLoaded = true;
       });
     }
-  }
-
-  Future<List<InstalledApp>> _getInstalledApps() async {
-    if (Platform.isMacOS) {
-      return _getInstalledAppsMacOS();
-    }
-    return _getInstalledAppsWindows();
-  }
-
-  Future<List<InstalledApp>> _getInstalledAppsWindows() async {
-    final apps = <InstalledApp>[];
-
-    final programFiles = Platform.environment['ProgramFiles'] ?? r'C:\Program Files';
-    final programFilesX86 = Platform.environment['ProgramFiles(x86)'] ?? r'C:\Program Files (x86)';
-    final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
-    final appData = Platform.environment['APPDATA'] ?? '';
-
-    final searchDirs = [
-      programFiles,
-      programFilesX86,
-      if (localAppData.isNotEmpty) localAppData,
-      if (appData.isNotEmpty) appData,
-    ];
-
-    for (final dirPath in searchDirs) {
-      final dir = Directory(dirPath);
-      if (!await dir.exists()) continue;
-
-      try {
-        await for (final entity in dir.list(recursive: false)) {
-          if (entity is Directory) {
-            try {
-              await for (final file in entity.list(recursive: false)) {
-                if (file is File && file.path.toLowerCase().endsWith('.exe')) {
-                  final name = file.path.split(Platform.pathSeparator).last;
-                  if (!_isSystemExecutable(name)) {
-                    apps.add(InstalledApp(
-                      name: name,
-                      displayName: _getDisplayName(name, entity.path),
-                      path: file.path,
-                    ));
-                  }
-                }
-              }
-            } catch (_) {}
-          }
-        }
-      } catch (_) {}
-    }
-
-    final commonApps = [
-      InstalledApp(name: 'chrome.exe', displayName: 'Google Chrome', path: ''),
-      InstalledApp(name: 'firefox.exe', displayName: 'Mozilla Firefox', path: ''),
-      InstalledApp(name: 'msedge.exe', displayName: 'Microsoft Edge', path: ''),
-      InstalledApp(name: 'opera.exe', displayName: 'Opera', path: ''),
-      InstalledApp(name: 'brave.exe', displayName: 'Brave Browser', path: ''),
-      InstalledApp(name: 'telegram.exe', displayName: 'Telegram', path: ''),
-      InstalledApp(name: 'discord.exe', displayName: 'Discord', path: ''),
-      InstalledApp(name: 'slack.exe', displayName: 'Slack', path: ''),
-      InstalledApp(name: 'spotify.exe', displayName: 'Spotify', path: ''),
-      InstalledApp(name: 'steam.exe', displayName: 'Steam', path: ''),
-      InstalledApp(name: 'epicgameslauncher.exe', displayName: 'Epic Games', path: ''),
-      InstalledApp(name: 'code.exe', displayName: 'VS Code', path: ''),
-      InstalledApp(name: 'idea64.exe', displayName: 'IntelliJ IDEA', path: ''),
-      InstalledApp(name: 'torrent.exe', displayName: 'Torrent Client', path: ''),
-      InstalledApp(name: 'qbittorrent.exe', displayName: 'qBittorrent', path: ''),
-    ];
-
-    for (final app in commonApps) {
-      if (!apps.any((a) => a.name.toLowerCase() == app.name.toLowerCase())) {
-        apps.add(app);
-      }
-    }
-
-    return _deduplicateAndSort(apps);
-  }
-
-  Future<List<InstalledApp>> _getInstalledAppsMacOS() async {
-    final apps = <InstalledApp>[];
-
-    final homeDir = Platform.environment['HOME'] ?? '/Users/${Platform.environment['USER']}';
-    final searchDirs = [
-      '/Applications',
-      '$homeDir/Applications',
-    ];
-
-    for (final dirPath in searchDirs) {
-      final dir = Directory(dirPath);
-      if (!await dir.exists()) continue;
-
-      try {
-        await for (final entity in dir.list(recursive: false)) {
-          if (entity is Directory && entity.path.endsWith('.app')) {
-            final appName = entity.path.split('/').last.replaceAll('.app', '');
-            // Try to find the actual binary name inside the bundle
-            final macosDir = Directory('${entity.path}/Contents/MacOS');
-            String processName = appName;
-            if (await macosDir.exists()) {
-              try {
-                await for (final bin in macosDir.list(recursive: false)) {
-                  if (bin is File) {
-                    processName = bin.path.split('/').last;
-                    break;
-                  }
-                }
-              } catch (_) {}
-            }
-            if (!_isSystemAppMacOS(appName)) {
-              apps.add(InstalledApp(
-                name: processName,
-                displayName: appName,
-                path: entity.path,
-              ));
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    final commonApps = [
-      InstalledApp(name: 'Google Chrome', displayName: 'Google Chrome', path: ''),
-      InstalledApp(name: 'firefox', displayName: 'Firefox', path: ''),
-      InstalledApp(name: 'Safari', displayName: 'Safari', path: ''),
-      InstalledApp(name: 'Discord', displayName: 'Discord', path: ''),
-      InstalledApp(name: 'Telegram', displayName: 'Telegram', path: ''),
-      InstalledApp(name: 'Slack', displayName: 'Slack', path: ''),
-      InstalledApp(name: 'Spotify', displayName: 'Spotify', path: ''),
-      InstalledApp(name: 'steam_osx', displayName: 'Steam', path: ''),
-      InstalledApp(name: 'Electron', displayName: 'VS Code', path: ''),
-      InstalledApp(name: 'idea', displayName: 'IntelliJ IDEA', path: ''),
-      InstalledApp(name: 'qbittorrent', displayName: 'qBittorrent', path: ''),
-    ];
-
-    for (final app in commonApps) {
-      if (!apps.any((a) => a.name.toLowerCase() == app.name.toLowerCase())) {
-        apps.add(app);
-      }
-    }
-
-    return _deduplicateAndSort(apps);
-  }
-
-  bool _isSystemAppMacOS(String appName) {
-    final systemApps = [
-      'Utilities', 'Automator', 'Migration Assistant',
-      'System Preferences', 'System Settings',
-    ];
-    return systemApps.any((s) => appName.contains(s));
-  }
-
-  List<InstalledApp> _deduplicateAndSort(List<InstalledApp> apps) {
-    apps.sort((a, b) => a.displayName.compareTo(b.displayName));
-
-    final seen = <String>{};
-    apps.removeWhere((app) {
-      final key = app.name.toLowerCase();
-      if (seen.contains(key)) return true;
-      seen.add(key);
-      return false;
-    });
-
-    return apps;
-  }
-
-  bool _isSystemExecutable(String name) {
-    final systemExes = [
-      'uninstall', 'uninst', 'setup', 'install', 'update',
-      'updater', 'helper', 'crash', 'reporter', 'service',
-    ];
-    final lowerName = name.toLowerCase();
-    return systemExes.any((s) => lowerName.contains(s));
-  }
-
-  String _getDisplayName(String exeName, String dirPath) {
-    final dirName = dirPath.split(Platform.pathSeparator).last;
-    if (dirName.isNotEmpty && !dirName.contains('.')) {
-      return dirName;
-    }
-    return exeName.replaceAll('.exe', '').replaceAll('.EXE', '');
   }
 
   Future<void> _saveConfig() async {
+    // Fix #3: keep the cached current-domains Set in sync whenever the domain
+    // data changes (every add/remove/import/save funnels through here).
+    _rebuildDomainsCache();
     try {
       final configService = context.read<ConfigService>();
 
@@ -1427,4 +1290,225 @@ class InstalledApp {
     required this.displayName,
     required this.path,
   });
+}
+
+// ── App discovery (Fix #2) ──
+//
+// These run inside `Isolate.run`, so they must be top-level (no `this`, no
+// BuildContext). They are pure IO/CPU and return sendable `InstalledApp`s
+// (only `final String` fields). The heavy filesystem walk therefore runs off
+// the UI isolate.
+
+Future<List<InstalledApp>> _discoverInstalledApps() async {
+  if (Platform.isMacOS) {
+    return _getInstalledAppsMacOS();
+  }
+  return _getInstalledAppsWindows();
+}
+
+Future<List<InstalledApp>> _getInstalledAppsWindows() async {
+  final apps = <InstalledApp>[];
+
+  final programFiles = Platform.environment['ProgramFiles'] ?? r'C:\Program Files';
+  final programFilesX86 = Platform.environment['ProgramFiles(x86)'] ?? r'C:\Program Files (x86)';
+  final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
+  final appData = Platform.environment['APPDATA'] ?? '';
+
+  final searchDirs = [
+    programFiles,
+    programFilesX86,
+    if (localAppData.isNotEmpty) localAppData,
+    if (appData.isNotEmpty) appData,
+  ];
+
+  for (final dirPath in searchDirs) {
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) continue;
+
+    try {
+      await for (final entity in dir.list(recursive: false)) {
+        if (entity is Directory) {
+          try {
+            await for (final file in entity.list(recursive: false)) {
+              if (file is File && file.path.toLowerCase().endsWith('.exe')) {
+                final name = file.path.split(Platform.pathSeparator).last;
+                if (!_isSystemExecutable(name)) {
+                  apps.add(InstalledApp(
+                    name: name,
+                    displayName: _getDisplayName(name, entity.path),
+                    path: file.path,
+                  ));
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  final commonApps = [
+    InstalledApp(name: 'chrome.exe', displayName: 'Google Chrome', path: ''),
+    InstalledApp(name: 'firefox.exe', displayName: 'Mozilla Firefox', path: ''),
+    InstalledApp(name: 'msedge.exe', displayName: 'Microsoft Edge', path: ''),
+    InstalledApp(name: 'opera.exe', displayName: 'Opera', path: ''),
+    InstalledApp(name: 'brave.exe', displayName: 'Brave Browser', path: ''),
+    InstalledApp(name: 'telegram.exe', displayName: 'Telegram', path: ''),
+    InstalledApp(name: 'discord.exe', displayName: 'Discord', path: ''),
+    InstalledApp(name: 'slack.exe', displayName: 'Slack', path: ''),
+    InstalledApp(name: 'spotify.exe', displayName: 'Spotify', path: ''),
+    InstalledApp(name: 'steam.exe', displayName: 'Steam', path: ''),
+    InstalledApp(name: 'epicgameslauncher.exe', displayName: 'Epic Games', path: ''),
+    InstalledApp(name: 'code.exe', displayName: 'VS Code', path: ''),
+    InstalledApp(name: 'idea64.exe', displayName: 'IntelliJ IDEA', path: ''),
+    InstalledApp(name: 'torrent.exe', displayName: 'Torrent Client', path: ''),
+    InstalledApp(name: 'qbittorrent.exe', displayName: 'qBittorrent', path: ''),
+  ];
+
+  for (final app in commonApps) {
+    if (!apps.any((a) => a.name.toLowerCase() == app.name.toLowerCase())) {
+      apps.add(app);
+    }
+  }
+
+  return _deduplicateAndSort(apps);
+}
+
+Future<List<InstalledApp>> _getInstalledAppsMacOS() async {
+  final apps = <InstalledApp>[];
+
+  final homeDir = Platform.environment['HOME'] ?? '/Users/${Platform.environment['USER']}';
+  final searchDirs = [
+    '/Applications',
+    '$homeDir/Applications',
+  ];
+
+  for (final dirPath in searchDirs) {
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) continue;
+
+    try {
+      await for (final entity in dir.list(recursive: false)) {
+        if (entity is Directory && entity.path.endsWith('.app')) {
+          final appName = entity.path.split('/').last.replaceAll('.app', '');
+          // Try to find the actual binary name inside the bundle
+          final macosDir = Directory('${entity.path}/Contents/MacOS');
+          String processName = appName;
+          if (await macosDir.exists()) {
+            try {
+              await for (final bin in macosDir.list(recursive: false)) {
+                if (bin is File) {
+                  processName = bin.path.split('/').last;
+                  break;
+                }
+              }
+            } catch (_) {}
+          }
+          if (!_isSystemAppMacOS(appName)) {
+            apps.add(InstalledApp(
+              name: processName,
+              displayName: appName,
+              path: entity.path,
+            ));
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  final commonApps = [
+    InstalledApp(name: 'Google Chrome', displayName: 'Google Chrome', path: ''),
+    InstalledApp(name: 'firefox', displayName: 'Firefox', path: ''),
+    InstalledApp(name: 'Safari', displayName: 'Safari', path: ''),
+    InstalledApp(name: 'Discord', displayName: 'Discord', path: ''),
+    InstalledApp(name: 'Telegram', displayName: 'Telegram', path: ''),
+    InstalledApp(name: 'Slack', displayName: 'Slack', path: ''),
+    InstalledApp(name: 'Spotify', displayName: 'Spotify', path: ''),
+    InstalledApp(name: 'steam_osx', displayName: 'Steam', path: ''),
+    InstalledApp(name: 'Electron', displayName: 'VS Code', path: ''),
+    InstalledApp(name: 'idea', displayName: 'IntelliJ IDEA', path: ''),
+    InstalledApp(name: 'qbittorrent', displayName: 'qBittorrent', path: ''),
+  ];
+
+  for (final app in commonApps) {
+    if (!apps.any((a) => a.name.toLowerCase() == app.name.toLowerCase())) {
+      apps.add(app);
+    }
+  }
+
+  return _deduplicateAndSort(apps);
+}
+
+bool _isSystemAppMacOS(String appName) {
+  final systemApps = [
+    'Utilities', 'Automator', 'Migration Assistant',
+    'System Preferences', 'System Settings',
+  ];
+  return systemApps.any((s) => appName.contains(s));
+}
+
+List<InstalledApp> _deduplicateAndSort(List<InstalledApp> apps) {
+  apps.sort((a, b) => a.displayName.compareTo(b.displayName));
+
+  final seen = <String>{};
+  apps.removeWhere((app) {
+    final key = app.name.toLowerCase();
+    if (seen.contains(key)) return true;
+    seen.add(key);
+    return false;
+  });
+
+  return apps;
+}
+
+bool _isSystemExecutable(String name) {
+  final systemExes = [
+    'uninstall', 'uninst', 'setup', 'install', 'update',
+    'updater', 'helper', 'crash', 'reporter', 'service',
+  ];
+  final lowerName = name.toLowerCase();
+  return systemExes.any((s) => lowerName.contains(s));
+}
+
+String _getDisplayName(String exeName, String dirPath) {
+  final dirName = dirPath.split(Platform.pathSeparator).last;
+  if (dirName.isNotEmpty && !dirName.contains('.')) {
+    return dirName;
+  }
+  return exeName.replaceAll('.exe', '').replaceAll('.EXE', '');
+}
+
+// ── Log suggestion extraction (Fix #3) ──
+
+/// Pure helper: scan [lines] for domain-like tokens and return new suggestions
+/// not already present in [existingDomains] or [existingSuggestions], capped at
+/// [remainingSlots]. Extracted as a top-level function so it can be unit
+/// tested without any widget plumbing.
+List<String> extractDomainSuggestions(
+  Iterable<String> lines, {
+  required Set<String> existingDomains,
+  required List<String> existingSuggestions,
+  required int remainingSlots,
+}) {
+  if (remainingSlots <= 0) return const [];
+
+  final domainPattern = RegExp(r'(?:[\w-]+\.)+[a-zA-Z]{2,}');
+  final newSuggestions = <String>[];
+  final seen = <String>{};
+
+  for (final line in lines) {
+    for (final match in domainPattern.allMatches(line)) {
+      final domain = match.group(0)!.toLowerCase();
+      if (existingDomains.contains(domain)) continue;
+      if (existingSuggestions.contains(domain)) continue;
+      if (seen.contains(domain)) continue;
+      if (domain.endsWith('.local') || domain.endsWith('.internal')) continue;
+      if (domain == 'trusttunnel.com') continue;
+      if (newSuggestions.length >= remainingSlots) return newSuggestions;
+      seen.add(domain);
+      newSuggestions.add(domain);
+    }
+  }
+
+  return newSuggestions;
 }

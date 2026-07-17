@@ -137,26 +137,39 @@ class ServerConfig {
     );
   }
 
+  /// Escape a string for safe inclusion inside a TOML basic string ("...").
+  /// Prevents injection of config keys or breaking the TOML structure.
+  String _tomlEscape(String s) {
+    return s
+        .replaceAll('\\', '\\\\')
+        .replaceAll('"', '\\"')
+        .replaceAll('\n', '\\n')
+        .replaceAll('\r', '\\r')
+        .replaceAll('\t', '\\t');
+  }
+
   /// Generate TOML config file content
   String toToml() {
-    // Validate critical fields - ensure they're not null or empty
-    final h = hostname;
-    final a = address;
-    final u = username;
+    // Validate critical fields - ensure they're not null or empty.
+    // Escape values for safe inclusion in TOML basic strings.
+    final h = _tomlEscape(hostname);
+    final a = _tomlEscape(address);
+    final u = _tomlEscape(username);
 
-    if (h.isEmpty) {
+    if (hostname.isEmpty) {
       throw Exception('Hostname cannot be empty');
     }
-    if (a.isEmpty) {
+    if (address.isEmpty) {
       throw Exception('Address cannot be empty');
     }
-    if (u.isEmpty) {
+    if (username.isEmpty) {
       throw Exception('Username cannot be empty');
     }
 
     // Generate DNS upstreams list if specified
     final dnsValue = dns;
-    final dnsUpstreams = dnsValue.isNotEmpty ? '["$dnsValue"]' : '[]';
+    final dnsUpstreams =
+        dnsValue.isNotEmpty ? '["${_tomlEscape(dnsValue)}"]' : '[]';
 
     // Generate exclusions list from domains and apps
     final domains = splitTunnelDomains;
@@ -164,14 +177,14 @@ class ServerConfig {
     final allExclusions = [...domains, ...apps];
     final exclusionsStr = allExclusions.isEmpty
         ? '[]'
-        : '[\n${allExclusions.map((e) => '  "$e"').join(',\n')}\n]';
+        : '[\n${allExclusions.map((e) => '  "${_tomlEscape(e)}"').join(',\n')}\n]';
 
     // Safe access to all fields
     final ll = logLevel;
     final vm = vpnMode.name;
     final p = port;
     final ipv6 = hasIpv6;
-    final pwd = password;
+    final pwd = _tomlEscape(password);
     final skipVerif = skipVerification;
     final upProto = upstreamProtocol;
     final dpi = antiDpi;
@@ -250,7 +263,7 @@ upstream_protocol = "$upProto"
 # Is anti-DPI measures should be enabled
 anti_dpi = $dpi
 # Custom SNI value for TLS handshake (leave empty to use hostname)
-custom_sni = "${customSni}"
+custom_sni = "${_tomlEscape(customSni)}"
 
 
 # Defines the way to listen to network traffic by the kind of the nested table.

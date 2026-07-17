@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'models/vpn_status.dart';
 import 'services/vpn_service.dart';
@@ -12,7 +13,6 @@ import 'screens/split_tunnel_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/server_setup_screen.dart';
 import 'services/server_setup_service.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/localization_helper.dart';
 
@@ -307,6 +307,12 @@ class _MainScreenState extends State<MainScreen>
     with TrayListener, WindowListener, WidgetsBindingObserver {
   int _selectedIndex = 0;
 
+  // VPN service we listen to so the tray stays in sync with status changes
+  // triggered from anywhere (e.g. the Home-screen Connect/Disconnect button),
+  // not just from the tray menu itself.
+  VpnService? _vpnService;
+  bool? _lastConnected;
+
   @override
   void initState() {
     super.initState();
@@ -314,6 +320,12 @@ class _MainScreenState extends State<MainScreen>
     trayManager.addListener(this);
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
+
+    // Keep the tray menu/tooltip in sync with VPN status changes that happen
+    // outside the tray (listen:false read is safe in initState).
+    _vpnService = context.read<VpnService>();
+    _lastConnected = _vpnService!.status == VpnStatus.connected;
+    _vpnService!.addListener(_onVpnStatusChanged);
 
     // Prevent closing window without cleanup
     windowManager.setPreventClose(true);
@@ -324,7 +336,27 @@ class _MainScreenState extends State<MainScreen>
     WidgetsBinding.instance.removeObserver(this);
     trayManager.removeListener(this);
     windowManager.removeListener(this);
+    _vpnService?.removeListener(_onVpnStatusChanged);
     super.dispose();
+  }
+
+  /// React to VPN status changes (from the Home screen, tray, or anywhere)
+  /// and refresh the tray menu + tooltip so the labels never go stale.
+  void _onVpnStatusChanged() {
+    if (!mounted) return;
+
+    final isConnected = _vpnService?.status == VpnStatus.connected;
+    // Only do tray work when the connected-ness actually flipped.
+    if (isConnected == _lastConnected) return;
+    _lastConnected = isConnected;
+
+    // Fire-and-forget: tray APIs are async but we don't need to await here.
+    _updateTrayMenu();
+    // Reflect status in the tooltip using only existing localized strings.
+    trayManager.setToolTip(
+      '${L10n.tr.trayTooltip} - '
+      '${isConnected ? L10n.tr.vpnStatusConnected : L10n.tr.vpnStatusDisconnected}',
+    );
   }
 
   @override
@@ -453,45 +485,77 @@ class _MainScreenState extends State<MainScreen>
         await _performCleanup(graceful: true);
         await windowManager.destroy();
         exit(0);
-        break;
     }
   }
 
   @override
   void onWindowClose() async {
-    // Show dialog asking if user wants to minimize to tray or exit
-    final shouldExit = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true, // Allow dismissing by clicking outside
-      builder: (context) => AlertDialog(
-        title: Text(L10n.tr.dialogCloseTitle),
-        content: Text(
-          'Do you want to exit or minimize to tray?\n\n'
-          'If VPN is connected, it will be disconnected on exit.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(L10n.tr.dialogCloseMinimize),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(L10n.tr.dialogCloseExit),
-          ),
-        ],
-      ),
-    );
+    final prefs = await SharedPreferences.getInstance();
+    // Remembered close action: 'exit' or 'minimize'. Absent → ask each time.
+    String? action = prefs.getString('close_action');
 
-    if (shouldExit == true) {
-      // User chose to exit - perform cleanup
+    if (action == null) {
+      if (!mounted) return;
+      bool remember = false;
+      action = await showDialog<String>(
+        context: context,
+        barrierDismissible: true, // Allow dismissing by clicking outside
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: Text(L10n.tr.dialogCloseTitle),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Do you want to exit or minimize to tray?\n\n'
+                    'If VPN is connected, it will be disconnected on exit.',
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: remember,
+                    onChanged: (v) => setState(() => remember = v ?? false),
+                    title: const Text('Remember my choice'),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    dense: true,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop('minimize'),
+                child: Text(L10n.tr.dialogCloseMinimize),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop('exit'),
+                child: Text(L10n.tr.dialogCloseExit),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Dialog dismissed (clicked outside) → keep the window open.
+      if (action == null) return;
+
+      // Persist only if the user opted in.
+      if (remember) {
+        await prefs.setString('close_action', action);
+      }
+    }
+
+    if (action == 'exit') {
       await _performCleanup(graceful: true);
       await windowManager.destroy();
       exit(0);
-    } else if (shouldExit == false) {
-      // User chose to minimize to tray
+    } else {
+      // minimize to tray
       await windowManager.hide();
     }
-    // If shouldExit is null (dialog dismissed), do nothing - keep window open
   }
 
 

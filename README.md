@@ -28,6 +28,8 @@
 - HTTP/2 and HTTP/3 protocols
 - IPv6, custom DNS (DoH/DoT/DoQ)
 - Random password generation for VPN accounts
+- VPN password stored in the OS keystore (Windows DPAPI / macOS Keychain)
+- SSH host-key pinning (trust-on-first-use) for server deployment
 
 ## Quick Start
 

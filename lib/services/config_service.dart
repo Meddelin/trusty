@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import '../models/server_config.dart';
 import '../utils/localization_helper.dart';
@@ -11,7 +12,11 @@ import '../models/domain_group.dart';
 class ConfigService extends ChangeNotifier {
   static const String _configKey = 'server_config';
   static const String _domainGroupsKey = 'domain_groups';
+  static const String _passwordKey = 'vpn_password';
   static const String _configFileName = 'trusttunnel_client.toml';
+
+  /// Secure storage for the VPN password (Windows DPAPI / macOS Keychain)
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   /// Load server configuration from local storage
   Future<ServerConfig> loadConfig() async {
@@ -21,10 +26,42 @@ class ConfigService extends ChangeNotifier {
 
       if (jsonString != null) {
         final json = jsonDecode(jsonString) as Map<String, dynamic>;
+
+        // Read the password from secure storage. A keystore hiccup must not
+        // nuke the rest of the config (the outer catch would return defaults),
+        // so degrade to an empty password instead.
+        String password = '';
+        try {
+          password = await _secureStorage.read(key: _passwordKey) ?? '';
+        } catch (e) {
+          if (kDebugMode) {
+            print('Secure storage read failed: $e');
+          }
+        }
+
+        // Migrate legacy plaintext password stored inside the JSON
+        if (json.containsKey('password')) {
+          final legacyPassword = json['password'] as String? ?? '';
+          if (legacyPassword.isNotEmpty) {
+            password = legacyPassword;
+            await _secureStorage.write(key: _passwordKey, value: legacyPassword);
+          }
+          // Strip the plaintext password and overwrite the stored JSON
+          json.remove('password');
+          await prefs.setString(_configKey, jsonEncode(json));
+          if (kDebugMode) {
+            print('Migrated plaintext password to secure storage');
+          }
+        }
+
+        // Rebuild config with the recovered password
+        json['password'] = password;
         return ServerConfig.fromJson(json);
       }
     } catch (e) {
-      print('Error loading config: $e');
+      if (kDebugMode) {
+        print('Error loading config: $e');
+      }
     }
 
     // Return default config if loading fails
@@ -36,12 +73,21 @@ class ConfigService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = config.toJson();
-      print('Saving config - vpnMode: ${json['vpnMode']}, domains: ${json['splitTunnelDomains']}, apps: ${json['splitTunnelApps']}');
+      if (kDebugMode) {
+        print('Saving config - vpnMode: ${json['vpnMode']}, domains: ${json['splitTunnelDomains']}, apps: ${json['splitTunnelApps']}');
+      }
+
+      // Store the password in secure storage, never in SharedPreferences
+      await _secureStorage.write(key: _passwordKey, value: config.password);
+      json.remove('password');
+
       final jsonString = jsonEncode(json);
       await prefs.setString(_configKey, jsonString);
       notifyListeners();
     } catch (e) {
-      print('Error saving config: $e');
+      if (kDebugMode) {
+        print('Error saving config: $e');
+      }
       rethrow;
     }
   }
@@ -108,8 +154,10 @@ class ConfigService extends ChangeNotifier {
       final configPath = await getConfigFilePath();
       final file = File(configPath);
 
-      print('Config validation: hostname=${config.hostname}, address=${config.address}, username=${config.username}');
-      print('Writing TOML - vpnMode: ${config.vpnMode}, domains: ${config.splitTunnelDomains}, apps: ${config.splitTunnelApps}');
+      if (kDebugMode) {
+        print('Config validation: hostname=${config.hostname}, address=${config.address}, username=${config.username}');
+        print('Writing TOML - vpnMode: ${config.vpnMode}, domains: ${config.splitTunnelDomains}, apps: ${config.splitTunnelApps}');
+      }
 
       // Validate config before generating TOML
       if (config.hostname.isEmpty) {
@@ -125,10 +173,20 @@ class ConfigService extends ChangeNotifier {
       final toml = config.toToml();
       await file.writeAsString(toml);
 
-      print('Config file written successfully to: $configPath');
+      // Restrict permissions to the owner since the TOML holds the password.
+      // On Windows the user profile dir ACLs already restrict access.
+      if (!Platform.isWindows) {
+        await Process.run('chmod', ['600', configPath]);
+      }
+
+      if (kDebugMode) {
+        print('Config file written successfully to: $configPath');
+      }
     } catch (e, stackTrace) {
-      print('Error writing config file: $e');
-      print('Stack trace: $stackTrace');
+      if (kDebugMode) {
+        print('Error writing config file: $e');
+        print('Stack trace: $stackTrace');
+      }
       rethrow;
     }
   }
@@ -142,7 +200,9 @@ class ConfigService extends ChangeNotifier {
         await file.delete();
       }
     } catch (e) {
-      print('Error deleting config file: $e');
+      if (kDebugMode) {
+        print('Error deleting config file: $e');
+      }
     }
   }
 
@@ -153,7 +213,9 @@ class ConfigService extends ChangeNotifier {
       final jsonString = jsonEncode(config.toJson());
       await file.writeAsString(jsonString);
     } catch (e) {
-      print('Error exporting config: $e');
+      if (kDebugMode) {
+        print('Error exporting config: $e');
+      }
       rethrow;
     }
   }
@@ -166,7 +228,9 @@ class ConfigService extends ChangeNotifier {
       final json = jsonDecode(jsonString) as Map<String, dynamic>;
       return ServerConfig.fromJson(json);
     } catch (e) {
-      print('Error importing config: $e');
+      if (kDebugMode) {
+        print('Error importing config: $e');
+      }
       rethrow;
     }
   }
@@ -182,7 +246,9 @@ class ConfigService extends ChangeNotifier {
         return DomainGroupsData.fromJson(json);
       }
     } catch (e) {
-      print('Error loading domain groups: $e');
+      if (kDebugMode) {
+        print('Error loading domain groups: $e');
+      }
     }
 
     return DomainGroupsData();
@@ -195,7 +261,9 @@ class ConfigService extends ChangeNotifier {
       final jsonString = jsonEncode(data.toJson());
       await prefs.setString(_domainGroupsKey, jsonString);
     } catch (e) {
-      print('Error saving domain groups: $e');
+      if (kDebugMode) {
+        print('Error saving domain groups: $e');
+      }
       rethrow;
     }
   }
