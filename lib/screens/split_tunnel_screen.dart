@@ -368,17 +368,8 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
 
     if (raw == null) return;
 
-    final existing = _getAllCurrentDomains();
-    final toAdd = <String>[];
-    var invalid = 0;
-    for (final token in parseExclusionList(raw)) {
-      final entry = normalizeExclusion(token);
-      if (entry == null) {
-        invalid++;
-      } else if (!existing.contains(entry) && !toAdd.contains(entry)) {
-        toAdd.add(entry);
-      }
-    }
+    final (toAdd, invalid) =
+        importExclusionList(raw, _getAllCurrentDomains());
 
     if (toAdd.isEmpty) {
       if (mounted) {
@@ -1083,60 +1074,56 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                           ],
                         ),
                       )
-                    : ListView(
-                        children: [
-                          // Domain groups
-                          ..._groups.map(_buildGroupCard),
-
-                          // Standalone domains
-                          if (_standaloneDomains.isNotEmpty) ...[
-                            if (_groups.isNotEmpty)
-                              Padding(
-                                padding: EdgeInsets.only(top: 12, bottom: 4),
-                                child: Text(
-                                  AppLocalizations.of(
-                                    context,
-                                  )!.splitTunnelOther,
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.outline,
-                                      ),
-                                ),
-                              ),
-                            ..._standaloneDomains.map(
-                              (domain) => Card(
-                                margin: const EdgeInsets.only(bottom: 4),
-                                child: ListTile(
-                                  dense: true,
-                                  leading: Icon(
-                                    _getDomainIcon(domain),
-                                    size: 20,
-                                  ),
-                                  title: Text(domain),
-                                  trailing: IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      size: 20,
-                                    ),
-                                    onPressed: () =>
-                                        _removeStandaloneDomain(domain),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-
-                          // Suggestions from log monitoring
-                          if (_suggestions.isNotEmpty) _buildSuggestionBanner(),
-                        ],
-                      ),
+                    : _buildDomainsList(),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Sections in order: group cards, an "Other" header (only when both
+  /// groups and standalone entries exist), standalone domain tiles, the
+  /// suggestion banner. ListView.builder keeps the list lazy — a user list
+  /// of hundreds/thousands of domains must not be rebuilt as widgets in full
+  /// on every setState.
+  Widget _buildDomainsList() {
+    final hasHeader = _standaloneDomains.isNotEmpty && _groups.isNotEmpty;
+    final standaloneStart = _groups.length + (hasHeader ? 1 : 0);
+    final bannerIndex = standaloneStart + _standaloneDomains.length;
+    return ListView.builder(
+      itemCount: bannerIndex + (_suggestions.isNotEmpty ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index < _groups.length) return _buildGroupCard(_groups[index]);
+        if (hasHeader && index == _groups.length) {
+          return Padding(
+            padding: EdgeInsets.only(top: 12, bottom: 4),
+            child: Text(
+              AppLocalizations.of(context)!.splitTunnelOther,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          );
+        }
+        if (index < bannerIndex) {
+          final domain = _standaloneDomains[index - standaloneStart];
+          return Card(
+            margin: const EdgeInsets.only(bottom: 4),
+            child: ListTile(
+              dense: true,
+              leading: Icon(_getDomainIcon(domain), size: 20),
+              title: Text(domain),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () => _removeStandaloneDomain(domain),
+              ),
+            ),
+          );
+        }
+        return _buildSuggestionBanner();
+      },
     );
   }
 

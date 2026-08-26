@@ -15,6 +15,26 @@ List<String> parseExclusionList(String raw) {
   return result;
 }
 
+/// Bulk-import a pasted block of exclusions: tokens from
+/// [parseExclusionList] are normalized via [normalizeExclusion]; invalid
+/// tokens are counted, entries already in [existing] (lowercase) or seen
+/// earlier in the paste are skipped. Set-based lookups keep multi-thousand
+/// -line pastes linear.
+(List<String>, int) importExclusionList(String raw, Set<String> existing) {
+  final added = <String>[];
+  final seen = <String>{};
+  var invalid = 0;
+  for (final token in parseExclusionList(raw)) {
+    final entry = normalizeExclusion(token);
+    if (entry == null) {
+      invalid++;
+    } else if (!existing.contains(entry) && seen.add(entry)) {
+      added.add(entry);
+    }
+  }
+  return (added, invalid);
+}
+
 /// Kind of a split-tunnel exclusion entry.
 enum ExclusionKind { domain, ip, cidr, invalid }
 

@@ -474,7 +474,11 @@ class ConfigService extends ChangeNotifier {
       }
 
       final json = cfg.toJson();
-      debugPrint('Saving config - vpnMode: ${json['vpnMode']}, domains: ${json['splitTunnelDomains']}, apps: ${json['splitTunnelApps']}');
+      // Log counts, not the lists themselves — they can hold thousands of
+      // entries and stringifying them on every save is pure waste.
+      debugPrint('Saving config - vpnMode: ${json['vpnMode']}, '
+          'domains: ${cfg.splitTunnelDomains.length}, '
+          'apps: ${cfg.splitTunnelApps.length}');
 
       // App-global settings live in their own keys, not in server entries.
       await prefs.setString(_appDnsKey, cfg.dns);
@@ -580,7 +584,9 @@ class ConfigService extends ChangeNotifier {
       final file = File(configPath);
 
       debugPrint('Config validation: hostname=${config.hostname}, address=${config.address}, username=${config.username}');
-      debugPrint('Writing TOML - vpnMode: ${config.vpnMode}, domains: ${config.splitTunnelDomains}, apps: ${config.splitTunnelApps}');
+      debugPrint('Writing TOML - vpnMode: ${config.vpnMode}, '
+          'domains: ${config.splitTunnelDomains.length}, '
+          'apps: ${config.splitTunnelApps.length}');
 
       // Validate config before generating TOML
       if (config.hostname.isEmpty) {
