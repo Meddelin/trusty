@@ -33,6 +33,20 @@ class ConfigService extends ChangeNotifier {
   /// key is kept as a read fallback for configs saved before server lists.
   String _pwKey(String id) => id.isEmpty ? _passwordKey : '${_passwordKey}_$id';
 
+  /// Secure-storage key for a server's client random prefix. The prefix is a
+  /// shared access token (it gates connections on filtering-enabled servers),
+  /// so it lives in the keystore like the password, never in SharedPreferences.
+  String _prefixKey(String id) => 'client_random_prefix_$id';
+
+  Future<String> _readPrefix(String id) async {
+    try {
+      return await _secureStorage.read(key: _prefixKey(id)) ?? '';
+    } catch (e) {
+      debugPrint('Secure storage read failed: $e');
+      return '';
+    }
+  }
+
   static String newServerId() =>
       DateTime.now().microsecondsSinceEpoch.toRadixString(36);
 
@@ -40,7 +54,10 @@ class ConfigService extends ChangeNotifier {
   /// Afterwards `server_list` always has at least one entry and
   /// `server_config` (the active config) carries the entry's id.
   Future<void> _ensureServerList(SharedPreferences prefs) async {
-    if (prefs.containsKey(_serversKey)) return;
+    if (prefs.containsKey(_serversKey)) {
+      await _migratePlaintextPrefixes(prefs);
+      return;
+    }
 
     Map<String, dynamic> json;
     try {
@@ -83,6 +100,58 @@ class ConfigService extends ChangeNotifier {
     await prefs.setString(_serversKey, jsonEncode([json]));
     await prefs.setString(_activeServerKey, id);
     debugPrint('Migrated single config to server list (id: $id)');
+
+    // The stored JSON may still carry a plaintext prefix — move it to the
+    // keystore right away.
+    await _migratePlaintextPrefixes(prefs);
+  }
+
+  bool _prefixMigrationDone = false;
+
+  /// One-time migration: the client random prefix used to be stored as
+  /// plaintext inside the server-list / active-config JSON. Move each value
+  /// to its per-server keystore key and strip the field from the JSON.
+  Future<void> _migratePlaintextPrefixes(SharedPreferences prefs) async {
+    if (_prefixMigrationDone) return;
+    _prefixMigrationDone = true;
+    try {
+      final servers = _decodeServers(prefs);
+      var changed = false;
+      for (final s in servers) {
+        if (!s.containsKey('clientRandomPrefix')) continue;
+        final prefix = s.remove('clientRandomPrefix') as String? ?? '';
+        final id = s['id'] as String? ?? '';
+        if (prefix.isNotEmpty && id.isNotEmpty) {
+          await _secureStorage.write(key: _prefixKey(id), value: prefix);
+        }
+        changed = true;
+      }
+      if (changed) {
+        await prefs.setString(_serversKey, jsonEncode(servers));
+      }
+
+      // The active-config copy carries the same plaintext value.
+      final raw = prefs.getString(_configKey);
+      if (raw != null) {
+        final json = jsonDecode(raw) as Map<String, dynamic>;
+        if (json.containsKey('clientRandomPrefix')) {
+          final prefix = json.remove('clientRandomPrefix') as String? ?? '';
+          final id = json['id'] as String? ?? '';
+          if (prefix.isNotEmpty && id.isNotEmpty) {
+            await _secureStorage.write(key: _prefixKey(id), value: prefix);
+          }
+          await prefs.setString(_configKey, jsonEncode(json));
+          changed = true;
+        }
+      }
+      if (changed) {
+        debugPrint('Migrated client random prefixes to secure storage');
+      }
+    } catch (e) {
+      // Retry on the next call rather than silently losing prefixes.
+      _prefixMigrationDone = false;
+      debugPrint('Client random prefix migration failed: $e');
+    }
   }
 
   List<Map<String, dynamic>> _decodeServers(SharedPreferences prefs) {
@@ -167,7 +236,7 @@ class ConfigService extends ChangeNotifier {
       upstreamProtocol: entry.upstreamProtocol,
       antiDpi: entry.antiDpi,
       customSni: entry.customSni,
-      clientRandomPrefix: entry.clientRandomPrefix,
+      clientRandomPrefix: await _readPrefix(id),
       postQuantumGroupEnabled: entry.postQuantumGroupEnabled,
     ));
   }
@@ -188,7 +257,10 @@ class ConfigService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Secure storage read failed: $e');
     }
-    return entry.copyWith(password: password);
+    return entry.copyWith(
+      password: password,
+      clientRandomPrefix: await _readPrefix(id),
+    );
   }
 
   /// Upsert one server's connection fields (and password) WITHOUT changing
@@ -222,17 +294,22 @@ class ConfigService extends ChangeNotifier {
       return;
     }
 
-    // Non-active entry: same empty-password guard as saveConfig.
+    // Non-active entry: same empty-password guard as saveConfig. The prefix
+    // is written as-is — empty is a real value (no connection filtering).
     try {
       if (cfg.password.isNotEmpty) {
         await _secureStorage.write(key: _pwKey(cfg.id), value: cfg.password);
       } else if (await _secureStorage.read(key: _pwKey(cfg.id)) == null) {
         await _secureStorage.write(key: _pwKey(cfg.id), value: '');
       }
+      await _secureStorage.write(
+          key: _prefixKey(cfg.id), value: cfg.clientRandomPrefix);
     } catch (e) {
       debugPrint('Secure storage write failed: $e');
     }
-    final json = cfg.toJson()..remove('password');
+    final json = cfg.toJson()
+      ..remove('password')
+      ..remove('clientRandomPrefix');
     final servers = _decodeServers(prefs);
     final idx = servers.indexWhere((s) => s['id'] == cfg.id);
     if (idx >= 0) {
@@ -253,10 +330,14 @@ class ConfigService extends ChangeNotifier {
     await _ensureServerList(prefs);
     final entry = config.copyWith(id: newServerId());
     final servers = _decodeServers(prefs);
-    servers.add(entry.toJson()..remove('password'));
+    servers.add(entry.toJson()
+      ..remove('password')
+      ..remove('clientRandomPrefix'));
     await prefs.setString(_serversKey, jsonEncode(servers));
     try {
       await _secureStorage.write(key: _pwKey(entry.id), value: entry.password);
+      await _secureStorage.write(
+          key: _prefixKey(entry.id), value: entry.clientRandomPrefix);
     } catch (e) {
       debugPrint('Secure storage write failed: $e');
     }
@@ -290,6 +371,7 @@ class ConfigService extends ChangeNotifier {
     await prefs.setString(_serversKey, jsonEncode(servers));
     try {
       await _secureStorage.delete(key: _pwKey(id));
+      await _secureStorage.delete(key: _prefixKey(id));
     } catch (e) {
       debugPrint('Secure storage delete failed: $e');
     }
@@ -352,8 +434,11 @@ class ConfigService extends ChangeNotifier {
           debugPrint('Migrated plaintext password to secure storage');
         }
 
-        // Rebuild config with the recovered password
+        // Rebuild config with the recovered secrets. The prefix was stripped
+        // from the JSON by _migratePlaintextPrefixes and lives per server in
+        // the keystore, like the password.
         json['password'] = password;
+        json['clientRandomPrefix'] = await _readPrefix(id);
         return ServerConfig.fromJson(json);
       }
     } catch (e) {
@@ -396,6 +481,13 @@ class ConfigService extends ChangeNotifier {
         await _secureStorage.write(key: _pwKey(cfg.id), value: '');
       }
       json.remove('password');
+
+      // The client random prefix goes to the keystore too. Unlike the
+      // password it is written as-is: '' is a legitimate value (no connection
+      // filtering) and every internal path carries the real stored prefix.
+      await _secureStorage.write(
+          key: _prefixKey(cfg.id), value: cfg.clientRandomPrefix);
+      json.remove('clientRandomPrefix');
 
       await prefs.setString(_configKey, jsonEncode(json));
 
@@ -534,19 +626,24 @@ class ConfigService extends ChangeNotifier {
     }
   }
 
-  /// Export configuration to JSON file
+  /// Export configuration to JSON file. Secrets (password, client random
+  /// prefix) never leave the keystore — the exported file is plaintext.
   Future<void> exportConfig(ServerConfig config, String filePath) async {
     try {
       final file = File(filePath);
-      final jsonString = jsonEncode(config.toJson());
-      await file.writeAsString(jsonString);
+      final json = config.toJson()
+        ..remove('password')
+        ..remove('clientRandomPrefix');
+      await file.writeAsString(jsonEncode(json));
     } catch (e) {
       debugPrint('Error exporting config: $e');
       rethrow;
     }
   }
 
-  /// Import configuration from JSON file
+  /// Import configuration from JSON file. Accepts both old exports that
+  /// carried secrets inline and new secret-free ones (missing fields default
+  /// to empty in [ServerConfig.fromJson]).
   Future<ServerConfig> importConfig(String filePath) async {
     try {
       final file = File(filePath);

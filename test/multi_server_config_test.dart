@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trusty/models/server_config.dart';
 import 'package:trusty/services/config_service.dart';
@@ -232,6 +234,123 @@ void main() {
     // The last server cannot be deleted.
     await service.deleteServer(idA);
     expect(await service.loadServers(), hasLength(1));
+  });
+
+  test('plaintext client random prefixes migrate into the keystore', () async {
+    // Pre-keystore format: the prefix sits as plaintext inside both the
+    // server list and the active config JSON.
+    final entry = ServerConfig(
+      id: 'srv1',
+      hostname: 'a.example.com',
+      address: '1.1.1.1',
+      username: 'ua',
+      password: '',
+      clientRandomPrefix: 'aabbccdd/ff00ff00',
+    ).toJson()
+      ..remove('password');
+    SharedPreferences.setMockInitialValues({
+      'server_config': jsonEncode(entry),
+      'server_list': jsonEncode([entry]),
+      'active_server_id': 'srv1',
+    });
+
+    final service = ConfigService();
+    final config = await service.loadConfig();
+
+    expect(config.clientRandomPrefix, 'aabbccdd/ff00ff00');
+    expect(secureStore['client_random_prefix_srv1'], 'aabbccdd/ff00ff00');
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('server_config'), isNot(contains('aabbccdd')));
+    expect(prefs.getString('server_list'), isNot(contains('aabbccdd')));
+  });
+
+  test('saveConfig keeps the prefix out of SharedPreferences and round-trips',
+      () async {
+    final service = ConfigService();
+    await service.saveConfig(ServerConfig(
+      hostname: 'a.example.com',
+      address: '1.1.1.1',
+      username: 'ua',
+      password: 'pa',
+      clientRandomPrefix: 'deadbeef/ff00ff00',
+    ));
+    final id = await service.getActiveServerId();
+
+    expect(secureStore['client_random_prefix_$id'], 'deadbeef/ff00ff00');
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('server_config'), isNot(contains('deadbeef')));
+    expect(prefs.getString('server_list'), isNot(contains('deadbeef')));
+    expect(
+        (await service.loadConfig()).clientRandomPrefix, 'deadbeef/ff00ff00');
+
+    // Unlike the password, clearing the prefix is a legitimate edit —
+    // an empty value must actually stick.
+    final current = await service.loadConfig();
+    await service.saveConfig(current.copyWith(clientRandomPrefix: ''));
+    expect((await service.loadConfig()).clientRandomPrefix, isEmpty);
+  });
+
+  test('switching servers swaps the keystore-held prefix', () async {
+    final service = ConfigService();
+    await service.saveConfig(ServerConfig(
+      hostname: 'a.example.com',
+      address: '1.1.1.1',
+      username: 'ua',
+      password: 'pa',
+      clientRandomPrefix: 'aaaa1111/ff00ff00',
+    ));
+    final idA = await service.getActiveServerId();
+
+    await service.addServerConfig(ServerConfig(
+      hostname: 'b.example.com',
+      address: '2.2.2.2',
+      username: 'ub',
+      password: 'pb',
+    ));
+    expect((await service.loadConfig()).clientRandomPrefix, isEmpty);
+
+    await service.switchServer(idA);
+    expect(
+        (await service.loadConfig()).clientRandomPrefix, 'aaaa1111/ff00ff00');
+  });
+
+  test('exportConfig omits secrets; importConfig accepts old files with them',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('trusty_test');
+    addTearDown(() => dir.delete(recursive: true));
+    final service = ConfigService();
+
+    final path = p.join(dir.path, 'export.json');
+    await service.exportConfig(
+      ServerConfig(
+        hostname: 'h',
+        address: 'a',
+        username: 'u',
+        password: 'secret-pw',
+        clientRandomPrefix: 'feedface/ff00ff00',
+      ),
+      path,
+    );
+    final raw = await File(path).readAsString();
+    expect(raw, isNot(contains('secret-pw')));
+    expect(raw, isNot(contains('feedface')));
+    final imported = await service.importConfig(path);
+    expect(imported.hostname, 'h');
+    expect(imported.password, isEmpty);
+    expect(imported.clientRandomPrefix, isEmpty);
+
+    // Old exports carried the secrets inline — they still import.
+    final legacyPath = p.join(dir.path, 'legacy.json');
+    await File(legacyPath).writeAsString(jsonEncode(ServerConfig(
+      hostname: 'h',
+      address: 'a',
+      username: 'u',
+      password: 'old-pw',
+      clientRandomPrefix: 'cafebabe/ff00ff00',
+    ).toJson()));
+    final legacy = await service.importConfig(legacyPath);
+    expect(legacy.password, 'old-pw');
+    expect(legacy.clientRandomPrefix, 'cafebabe/ff00ff00');
   });
 
   test('multiple DNS upstreams are emitted as a TOML list', () {

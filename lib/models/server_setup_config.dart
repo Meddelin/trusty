@@ -175,11 +175,12 @@ class ServerSetupConfig {
   }
 }
 
-/// The non-secret outcome of a successful deploy, persisted so "Apply Client
-/// Settings" still works after an app restart. Losing the generated
+/// The outcome of a successful deploy, persisted so "Apply Client Settings"
+/// still works after an app restart. Losing the generated
 /// client_random_prefix between install and apply would permanently lock the
-/// user out of a filtering-enabled server, so it must survive restarts.
-/// Passwords are deliberately excluded — never store secrets.
+/// user out of a filtering-enabled server, so it must survive restarts —
+/// ServerSetupService keeps it in the OS keystore and the rest in prefs.
+/// Passwords are deliberately excluded — never store them anywhere.
 class ServerSetupResult {
   final String host;
   final String domain;

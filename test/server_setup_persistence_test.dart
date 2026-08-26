@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trusty/models/server_setup_config.dart';
@@ -6,6 +7,33 @@ import 'package:trusty/services/server_setup_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // In-memory fake of flutter_secure_storage's method channel — the deploy
+  // result keeps its generated prefix in the keystore.
+  final secureStore = <String, String>{};
+  const channel =
+      MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+
+  setUp(() {
+    secureStore.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      final args =
+          (call.arguments as Map?)?.cast<String, dynamic>() ?? const {};
+      final key = args['key'] as String?;
+      switch (call.method) {
+        case 'read':
+          return secureStore[key];
+        case 'write':
+          secureStore[key!] = args['value'] as String? ?? '';
+          return null;
+        case 'delete':
+          secureStore.remove(key);
+          return null;
+      }
+      return null;
+    });
+  });
 
   group('ServerSetupResult', () {
     test('JSON round trip keeps every field', () {
@@ -95,7 +123,8 @@ void main() {
   });
 
   group('persisted deploy result', () {
-    test('loadPersistedResult restores the last successful deploy', () async {
+    test('legacy result with an inline prefix migrates it to the keystore',
+        () async {
       SharedPreferences.setMockInitialValues({
         'deploy_last_result':
             '{"host":"203.0.113.5","domain":"vpn.example.com",'
@@ -114,6 +143,27 @@ void main() {
       expect(result.listenPort, 8443);
       expect(result.vpnUsername, 'alice');
       expect(result.clientRandomPrefix, 'aabbccdd/ff00ff00');
+
+      // The plaintext copy is gone; the keystore holds the prefix now.
+      expect(secureStore['deploy_last_prefix'], 'aabbccdd/ff00ff00');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('deploy_last_result'),
+          isNot(contains('aabbccdd')));
+    });
+
+    test('loadPersistedResult reads the prefix back from the keystore',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'deploy_last_result':
+            '{"host":"203.0.113.5","domain":"vpn.example.com",'
+                '"listenPort":8443,"vpnUsername":"alice"}',
+      });
+      secureStore['deploy_last_prefix'] = 'aabbccdd/ff00ff00';
+      final service = ServerSetupService();
+
+      await service.loadPersistedResult();
+
+      expect(service.lastResult!.clientRandomPrefix, 'aabbccdd/ff00ff00');
     });
 
     test('loadPersistedResult tolerates a corrupt blob', () async {

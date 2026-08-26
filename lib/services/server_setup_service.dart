@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/setup_step.dart';
 import '../models/server_config.dart';
@@ -81,6 +82,12 @@ class ServerSetupService extends ChangeNotifier {
   static const String _formPrefsKey = 'deploy_form_config';
   static const String _lastResultPrefsKey = 'deploy_last_result';
 
+  /// Keystore key for the last deploy's generated client random prefix — an
+  /// access token, so it never sits in SharedPreferences as plaintext.
+  static const String _lastResultPrefixKey = 'deploy_last_prefix';
+
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
   /// Save the non-secret deploy form fields so they survive an app restart.
   /// Passwords are never persisted ([ServerSetupConfig.toJson] omits them).
   static Future<void> saveFormDefaults(ServerSetupConfig config) async {
@@ -113,8 +120,21 @@ class ServerSetupService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_lastResultPrefsKey);
       if (raw == null) return;
-      _lastResult =
-          ServerSetupResult.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+
+      // Older versions stored the prefix inside the JSON — migrate it to the
+      // keystore and strip the plaintext copy.
+      final legacyPrefix = json.remove('clientRandomPrefix') as String? ?? '';
+      if (legacyPrefix.isNotEmpty) {
+        await _secureStorage.write(
+            key: _lastResultPrefixKey, value: legacyPrefix);
+        await prefs.setString(_lastResultPrefsKey, jsonEncode(json));
+      }
+      json['clientRandomPrefix'] = legacyPrefix.isNotEmpty
+          ? legacyPrefix
+          : await _secureStorage.read(key: _lastResultPrefixKey) ?? '';
+
+      _lastResult = ServerSetupResult.fromJson(json);
       notifyListeners();
     } catch (e) {
       debugPrint('Failed to load persisted deploy result: $e');
@@ -130,8 +150,11 @@ class ServerSetupService extends ChangeNotifier {
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-          _lastResultPrefsKey, jsonEncode(_lastResult!.toJson()));
+      // Prefix to the keystore, the rest of the result to prefs.
+      await _secureStorage.write(
+          key: _lastResultPrefixKey, value: _lastResult!.clientRandomPrefix);
+      final json = _lastResult!.toJson()..remove('clientRandomPrefix');
+      await prefs.setString(_lastResultPrefsKey, jsonEncode(json));
     } catch (e) {
       debugPrint('Failed to persist deploy result: $e');
     }
@@ -681,10 +704,14 @@ class ServerSetupService extends ChangeNotifier {
 
     // Only override the client prefix when the installer generated one;
     // a brand-new server starts with an empty prefix, a re-deployed one
-    // keeps its stored value.
-    final prefix = result.clientRandomPrefix.isNotEmpty
-        ? result.clientRandomPrefix
-        : (match?.clientRandomPrefix ?? '');
+    // keeps its stored value (list entries no longer carry the prefix —
+    // it lives in the keystore, so resolve it through loadServerEntry).
+    var prefix = result.clientRandomPrefix;
+    if (prefix.isEmpty && match != null) {
+      prefix =
+          (await configService.loadServerEntry(match.id))?.clientRandomPrefix ??
+              '';
+    }
 
     // The persisted-result path has no password ('' — never stored).
     // saveConfig never overwrites a stored password with an empty string,

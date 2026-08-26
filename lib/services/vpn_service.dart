@@ -431,8 +431,10 @@ class VpnService extends ChangeNotifier {
         _addLog('ℹ️ Process already terminated');
       }
 
-      // Don't delete config file - keep it for next connection
-      // await _configService.deleteConfigFile();
+      // The TOML holds the password in plaintext and is rewritten on every
+      // connect anyway — remove it now that the client process is gone.
+      // deleteConfigFile swallows its own errors (the file may not exist).
+      await _configService.deleteConfigFile();
 
       _addLog('✅ Disconnected');
       _setStatus(VpnStatus.disconnected);
@@ -649,6 +651,10 @@ class VpnService extends ChangeNotifier {
 
       _process = null;
     }
+
+    // Never leave the plaintext-password TOML behind after exit (a failed
+    // connect may have written it even when no process is running).
+    await _configService.deleteConfigFile();
 
     _setStatus(VpnStatus.disconnected);
 
