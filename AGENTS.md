@@ -47,12 +47,13 @@ lib/
 ### Server List & Persistence Keys
 Multiple servers are stored in SharedPreferences; `server_config` remains the single "active config" contract all screens read/write:
 - `server_config` — active config JSON (its `id` links it to the list entry)
-- `server_list` — array of all server entries (passwords never stored here)
+- `server_list` — array of all server entries (passwords and client random prefixes never stored here)
 - `active_server_id` — id of the active entry
 - Passwords: OS keystore, one `vpn_password_<id>` key per server (legacy `vpn_password` kept as a read fallback / downgrade safety)
+- Client random prefixes: OS keystore, one `client_random_prefix_<id>` key per server (plaintext values in stored JSON migrate on first access; unlike the password, `''` is a real value and is written as-is)
 - `routing_lists` (JSON array of `RoutingList`) + `client/routing_lists/<id>.lst` caches — ready-made routing lists (built-in blocked-in-Russia preset + user URL/file lists), merged into exclusions at TOML-write time per each list's `appliesTo` mode; URL lists auto-refresh at connect when older than 24h (8s budget). Legacy `routing_preset_*` keys migrate automatically.
 - `app_dns`, `app_log_level` — app-global settings (seeded from the active config once; server entries may carry stale copies that are ignored)
-- `deploy_form_config`, `deploy_last_result` — non-secret VPS-deploy form defaults and the persisted outcome of the last successful deploy (incl. generated client_random_prefix)
+- `deploy_form_config`, `deploy_last_result` — non-secret VPS-deploy form defaults and the persisted outcome of the last successful deploy (its generated client_random_prefix lives in the keystore under `deploy_last_prefix`)
 - `banner_dismissed_*`, `update_dismissed_version` — persistent dismissals of InfoBanners / the update banner
 
 `saveConfig()` upserts the active entry by id and makes it active; `switchServer()` swaps only connection fields, preserving app-wide settings (DNS, log level, VPN mode, split tunneling). The one-time migration wraps a legacy single config into the list on first access.

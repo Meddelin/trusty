@@ -41,7 +41,7 @@
   "homeDisconnect": "Disconnect",
   "homeConnect": "Connect",
   "homeInfoTitle": "Information",
-  "homeInfoLine1": "Configure server settings in the \"Settings\" tab",
+  "homeInfoLine1": "Add your server in the \"Servers\" tab",
   "homeInfoLineClientWindows": "Make sure trusttunnel_client.exe is in the client/ directory",
   "homeInfoLineClientOther": "Make sure trusttunnel_client is in the client/ directory",
   "homeInfoLine3": "Connection logs are available in the \"Logs\" tab",

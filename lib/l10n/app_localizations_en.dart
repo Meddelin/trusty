@@ -137,8 +137,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeInfoTitle => 'Information';
 
   @override
-  String get homeInfoLine1 =>
-      'Configure server settings in the \"Settings\" tab';
+  String get homeInfoLine1 => 'Add your server in the \"Servers\" tab';
 
   @override
   String get homeInfoLineClientWindows =>

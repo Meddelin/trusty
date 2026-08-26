@@ -19,7 +19,7 @@
 
 - Material Design 3 interface with light/dark theme
 - One-click VPN connection — connects as soon as the tunnel is up, disconnects instantly
-- **Multiple servers** — keep a list of servers and switch between them from the Home screen; per-server passwords in the OS keystore
+- **Multiple servers** — keep a list of servers on the Servers tab and switch with one click (or from the Home screen switcher); per-server passwords and connection-filtering prefixes in the OS keystore
 - **Server deployment to VPS** — automatic setup via SSH, with optional connection filtering (anti-probe TLS prefix); a deployed server is added to the list without touching existing ones
 - **Ready-made routing lists** — one-click "sites blocked in Russia" preset ([itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains)) plus your own lists from a GitHub raw URL (auto-updating every 24h) or a local file
 - Split tunneling (General/Selective modes)
@@ -36,11 +36,11 @@
 
 ### Security
 
-- VPN password is stored in the OS keystore (Windows DPAPI / macOS Keychain), never in plain text
+- VPN passwords and connection-filtering prefixes are stored in the OS keystore (Windows DPAPI / macOS Keychain), never in plain text
 - SSH credentials for server deployment are used in-memory only and **never stored**
 - SSH host-key pinning (trust-on-first-use) protects server deployment from MITM
 - All values interpolated into configs are escaped; deployment inputs are validated before reaching the server shell
-- The generated client config file is restricted to your user account
+- The generated client config file is restricted to your user account and deleted after disconnect and on exit
 - A prominent warning is shown if certificate verification is disabled
 
 ## Quick Start
@@ -50,7 +50,7 @@
 1. Download `Trusty-Windows-vX.X.X.zip` from [Releases](../../releases)
 2. Extract to your preferred location
 3. Run `Trusty.exe`
-4. Configure server in "Settings" or deploy your own via "Server"
+4. Add your server on the "Servers" tab or deploy your own via "Deploy"
 5. Click "Connect"
 
 The archive includes everything: GUI, CLI client (`trusttunnel_client.exe`), Wintun driver.
@@ -61,7 +61,7 @@ The archive includes everything: GUI, CLI client (`trusttunnel_client.exe`), Win
 2. Extract and move `.app` to `/Applications`
 3. Place `client/` folder next to `.app`
 4. First launch: Right-click → Open (the app is not code-signed, so Gatekeeper needs a one-time confirmation)
-5. Configure server in "Settings"
+5. Add your server on the "Servers" tab
 6. Click "Connect" — on **first connect only**, a macOS password dialog appears to grant VPN tunnel access (one-time setup, no terminal required)
 
 ### Building from Source
@@ -80,7 +80,7 @@ See [BUILDING.md](BUILDING.md) for details.
 
 Trusty can automatically deploy a TrustTunnel server on a VPS:
 
-1. Open the **Server** tab
+1. Open the **Deploy** tab
 2. Enter SSH credentials for your VPS (IP, username, password or key) — used for this session only, never saved
 3. Specify a domain (must point to VPS via A record)
 4. Set VPN username/password

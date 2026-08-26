@@ -343,7 +343,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeInfoLine1.
   ///
   /// In en, this message translates to:
-  /// **'Configure server settings in the \"Settings\" tab'**
+  /// **'Add your server in the \"Servers\" tab'**
   String get homeInfoLine1;
 
   /// No description provided for @homeInfoLineClientWindows.

@@ -130,7 +130,7 @@ Trusty keeps a list of servers on the dedicated **Servers** tab: one card per se
 - **Switching** replaces only the connection fields (hostname, IP, port, credentials, protocol tweaks like Anti-DPI/SNI/prefix). App-wide settings — DNS, log level, VPN mode and all split-tunneling lists — stay as they are.
 - **Adding** opens a dialog — nothing is saved until you confirm real values.
 - **Deleting** removes the entry and its stored password (the last remaining server can't be deleted).
-- Each server's password is stored separately in the OS keystore.
+- Each server's password and client random prefix are stored separately in the OS keystore.
 - **Apply Client Settings** after a server deployment adds the deployed server as a new entry (or updates the entry with the same domain) and makes it active — it never overwrites your other servers.
 
 ### Hostname
@@ -198,7 +198,7 @@ Your VPN account password.
 
 **Security best practices:**
 - Use a strong, unique password
-- Trusty stores the password in the OS keystore (Windows DPAPI / macOS Keychain), never in plain text; the generated client config file is restricted to your user account
+- Trusty stores the password in the OS keystore (Windows DPAPI / macOS Keychain), never in plain text; the generated client config file is restricted to your user account and deleted after disconnect and on exit
 - Don't share passwords or commit them to version control
 - Consider using a password manager to generate strong passwords
 
@@ -208,14 +208,14 @@ Some servers only answer clients that send a known **TLS client random prefix** 
 
 ### Client random prefix
 
-**Settings → Authentication → Client random prefix.** A hex string (format: `prefix` or `prefix/mask`).
+**Servers → edit a server → Advanced → Client random prefix.** A hex string (format: `prefix` or `prefix/mask`).
 
 - Leave it **empty** unless your server requires it.
 - The value must match an `allow` rule in the server's `rules.toml`.
 - If you deployed the server from Trusty with **connection filtering** enabled, the prefix is generated for you and filled in automatically by **Apply Client Settings** — you don't need to type anything.
 - For a manually configured server, copy the exact prefix from the server's `rules.toml`.
 
-It is not a secret that protects your traffic (TLS already does that) — it's an access/obfuscation token. Anyone who knows it can pass the filter, so treat it like a shared access code.
+It is not a secret that protects your traffic (TLS already does that) — it's an access/obfuscation token. Anyone who knows it can pass the filter, so treat it like a shared access code. Trusty stores it in the OS keystore, like the password.
 
 ## Network Settings
 
@@ -226,6 +226,8 @@ DNS resolver(s) to use for domain name resolution through the VPN. You can speci
 ```
 https://dns.adguard-dns.com/dns-query, 8.8.8.8
 ```
+
+The preset menu next to the field (AdGuard Default / Family / Non-filtering, Cloudflare, Google) **appends** the chosen DoH upstream to the list — it never replaces what you typed, and duplicates are skipped.
 
 **Format options:**
 
