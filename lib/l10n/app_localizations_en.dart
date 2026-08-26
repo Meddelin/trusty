@@ -278,6 +278,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDnsError => 'Enter DNS server';
 
   @override
+  String get settingsDnsPresetTooltip => 'Add a DNS preset';
+
+  @override
+  String get settingsDnsPresetDuplicate =>
+      'This DNS server is already in the list';
+
+  @override
   String get settingsProtocol => 'Protocol';
 
   @override
@@ -297,6 +304,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsPostQuantum => 'Post-Quantum Key Exchange';
+
+  @override
+  String get settingsPostQuantumHint =>
+      'Hybrid key exchange that protects the TLS handshake against future quantum computers (harvest-now-decrypt-later). Slightly larger handshake; recommended to keep enabled.';
 
   @override
   String get settingsCustomSni => 'Custom SNI (optional)';

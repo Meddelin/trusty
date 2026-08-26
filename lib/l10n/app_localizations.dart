@@ -598,6 +598,18 @@ abstract class AppLocalizations {
   /// **'Enter DNS server'**
   String get settingsDnsError;
 
+  /// No description provided for @settingsDnsPresetTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a DNS preset'**
+  String get settingsDnsPresetTooltip;
+
+  /// No description provided for @settingsDnsPresetDuplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'This DNS server is already in the list'**
+  String get settingsDnsPresetDuplicate;
+
   /// No description provided for @settingsProtocol.
   ///
   /// In en, this message translates to:
@@ -639,6 +651,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Post-Quantum Key Exchange'**
   String get settingsPostQuantum;
+
+  /// No description provided for @settingsPostQuantumHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Hybrid key exchange that protects the TLS handshake against future quantum computers (harvest-now-decrypt-later). Slightly larger handshake; recommended to keep enabled.'**
+  String get settingsPostQuantumHint;
 
   /// No description provided for @settingsCustomSni.
   ///

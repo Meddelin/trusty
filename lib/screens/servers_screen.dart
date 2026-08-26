@@ -60,6 +60,16 @@ class _ServersScreenState extends State<ServersScreen> {
   String? _dnsError;
   bool _dnsApplying = false;
 
+  /// DNS-over-HTTPS presets offered next to the DNS field. Picking one
+  /// APPENDS to the comma-separated upstream list, it never replaces it.
+  static const List<(String, String)> _dnsPresets = [
+    ('AdGuard Default', 'https://dns.adguard-dns.com/dns-query'),
+    ('AdGuard Family', 'https://family.adguard-dns.com/dns-query'),
+    ('AdGuard Non-filtering', 'https://unfiltered.adguard-dns.com/dns-query'),
+    ('Cloudflare', 'https://dns.cloudflare.com/dns-query'),
+    ('Google', 'https://dns.google/dns-query'),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -319,6 +329,22 @@ class _ServersScreenState extends State<ServersScreen> {
     } finally {
       _dnsApplying = false;
     }
+  }
+
+  /// Append a preset upstream to the DNS list (deduplicated) and apply.
+  void _addDnsPreset(String url) {
+    final parts = _dns.text
+        .split(RegExp(r'[\s,]+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.contains(url)) {
+      showAppSnackBar(
+          context, AppLocalizations.of(context)!.settingsDnsPresetDuplicate);
+      return;
+    }
+    parts.add(url);
+    _dns.text = parts.join(', ');
+    _applyDns();
   }
 
   String? _validateDnsValue(String value) {
@@ -651,6 +677,7 @@ class _ServersScreenState extends State<ServersScreen> {
               ),
               _switch(
                 title: AppLocalizations.of(context)!.settingsPostQuantum,
+                subtitle: AppLocalizations.of(context)!.settingsPostQuantumHint,
                 value: _postQuantumGroupEnabled,
                 enabled: !isConnected,
                 onChanged: (value) {
@@ -749,6 +776,35 @@ class _ServersScreenState extends State<ServersScreen> {
                 errorText: _dnsError,
                 errorMaxLines: 2,
                 prefixIcon: const Icon(Icons.router),
+                suffixIcon: PopupMenuButton<String>(
+                  tooltip:
+                      AppLocalizations.of(context)!.settingsDnsPresetTooltip,
+                  icon: const Icon(Icons.playlist_add),
+                  onSelected: _addDnsPreset,
+                  itemBuilder: (context) => [
+                    for (final (name, url) in _dnsPresets)
+                      PopupMenuItem<String>(
+                        value: url,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(name),
+                            Text(
+                              url,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.outline,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -810,12 +866,14 @@ class _ServersScreenState extends State<ServersScreen> {
 
   Widget _switch({
     required String title,
+    String? subtitle,
     required bool value,
     required void Function(bool) onChanged,
     bool enabled = true,
   }) {
     return SwitchListTile(
       title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle),
       value: value,
       onChanged: enabled ? onChanged : null,
       contentPadding: EdgeInsets.zero,
