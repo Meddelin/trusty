@@ -46,6 +46,16 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
   bool _appsLoaded = false;
   String _appSearchQuery = '';
 
+  // Memoized Apps-tab rows. TabBarView builds BOTH tabs on every screen
+  // rebuild (domain edits, log-suggestion flushes, ConfigService notifies),
+  // so the filter + double sort used to rerun constantly — with a linear
+  // _apps.contains inside the sort comparator. _appsRevision is bumped on
+  // every _apps/_installedApps mutation to invalidate the memo.
+  int _appsRevision = 0;
+  String? _appsViewKey;
+  List<String> _manualAppsView = const [];
+  List<InstalledApp> _filteredAppsView = const [];
+
   final DomainDiscoveryService _discoveryService = DomainDiscoveryService();
 
   // Suggestions from log monitoring
@@ -99,6 +109,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       _groups = List.from(groupsData.groups);
       _standaloneDomains = List.from(groupsData.standaloneDomains);
       _apps = List.from(config.splitTunnelApps);
+      _appsRevision++;
       _routingLists = routingLists;
       _isLoading = false;
     });
@@ -186,6 +197,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       if (!mounted) return;
       setState(() {
         _installedApps = apps;
+        _appsRevision++;
         _isLoadingApps = false;
         _appsLoaded = true;
       });
@@ -255,7 +267,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       return;
     }
 
-    if (_getAllCurrentDomains().contains(entry)) {
+    if (_currentDomainsCache.contains(entry)) {
       showAppSnackBar(
         context,
         AppLocalizations.of(context)!.splitTunnelDomainAlreadyAdded,
@@ -294,7 +306,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     );
     if (result == null) return;
 
-    final existing = _getAllCurrentDomains()..remove(domain);
+    // The cache is kept current by every mutation; the `d != domain` filter
+    // below already excludes the primary domain itself.
+    final existing = _currentDomainsCache;
     final related = result.selectedDomains
         .map((d) => d.toLowerCase())
         .where((d) => d != domain && !existing.contains(d))
@@ -369,7 +383,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     if (raw == null) return;
 
     final (toAdd, invalid) =
-        importExclusionList(raw, _getAllCurrentDomains());
+        importExclusionList(raw, _currentDomainsCache);
 
     if (toAdd.isEmpty) {
       if (mounted) {
@@ -443,7 +457,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       return;
     }
     // Dedupe across ALL containers, not just this group.
-    if (_getAllCurrentDomains().contains(entry)) {
+    if (_currentDomainsCache.contains(entry)) {
       showAppSnackBar(
         context,
         AppLocalizations.of(context)!.splitTunnelDomainAlreadyAdded,
@@ -596,6 +610,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     }
     setState(() {
       _apps.add(name);
+      _appsRevision++;
       _appSearchQuery = '';
     });
     _appSearchController.clear();
@@ -609,6 +624,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       } else {
         _apps.add(appName);
       }
+      _appsRevision++;
     });
     _saveConfig();
   }
@@ -1339,8 +1355,8 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     }
   }
 
-  Widget _buildAppsTab() {
-    final query = _appSearchQuery.trim().toLowerCase();
+  /// Recompute the memoized Apps-tab rows for [query].
+  void _rebuildAppsView(String query) {
     // Space-insensitive match, so "whatsapp" finds "Whats App Desktop" and
     // "apple music" finds "AppleMusic.exe".
     final compactQuery = query.replaceAll(' ', '');
@@ -1350,23 +1366,27 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       return l.contains(query) || l.replaceAll(' ', '').contains(compactQuery);
     }
 
+    // Set lookups: _apps.contains inside the sort comparator was a linear
+    // scan per comparison.
+    final selected = _apps.toSet();
+
     // Selected apps the scanner didn't find (added manually, custom install
     // dirs, or picked on another machine) — must stay visible and removable,
     // never silently filtered out.
     final knownNames = _installedApps.map((a) => a.name.toLowerCase()).toSet();
-    final manualApps =
+    _manualAppsView =
         _apps
             .where((a) => !knownNames.contains(a.toLowerCase()))
             .where(matches)
             .toList()
           ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
-    final filteredApps =
+    _filteredAppsView =
         _installedApps
             .where((app) {
               // Running processes are search-only: the default view shows
               // the clean Installed-Apps list (selected ones always stay).
-              if (app.running && query.isEmpty && !_apps.contains(app.name)) {
+              if (app.running && query.isEmpty && !selected.contains(app.name)) {
                 return false;
               }
               return matches(app.name) || matches(app.displayName);
@@ -1374,13 +1394,24 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
             .toList()
           // Selected first, so what's enabled is visible without scrolling.
           ..sort((a, b) {
-            final selA = _apps.contains(a.name) ? 0 : 1;
-            final selB = _apps.contains(b.name) ? 0 : 1;
+            final selA = selected.contains(a.name) ? 0 : 1;
+            final selB = selected.contains(b.name) ? 0 : 1;
             if (selA != selB) return selA - selB;
             return a.displayName.toLowerCase().compareTo(
               b.displayName.toLowerCase(),
             );
           });
+  }
+
+  Widget _buildAppsTab() {
+    final query = _appSearchQuery.trim().toLowerCase();
+    final viewKey = '$_appsRevision|$query';
+    if (_appsViewKey != viewKey) {
+      _appsViewKey = viewKey;
+      _rebuildAppsView(query);
+    }
+    final manualApps = _manualAppsView;
+    final filteredApps = _filteredAppsView;
 
     final nothingToShow = manualApps.isEmpty && filteredApps.isEmpty;
 

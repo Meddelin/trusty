@@ -47,7 +47,7 @@ lib/
 ### Server List & Persistence Keys
 Multiple servers are stored in SharedPreferences; `server_config` remains the single "active config" contract all screens read/write:
 - `server_config` — active config JSON (its `id` links it to the list entry)
-- `server_list` — array of all server entries (passwords and client random prefixes never stored here)
+- `server_list` — array of all server entries, per-server connection fields only (passwords and client random prefixes never stored here; app-global settings and the split-tunnel lists are not duplicated per entry either)
 - `active_server_id` — id of the active entry
 - Passwords: OS keystore, one `vpn_password_<id>` key per server (legacy `vpn_password` kept as a read fallback / downgrade safety)
 - Client random prefixes: OS keystore, one `client_random_prefix_<id>` key per server (plaintext values in stored JSON migrate on first access; unlike the password, `''` is a real value and is written as-is)

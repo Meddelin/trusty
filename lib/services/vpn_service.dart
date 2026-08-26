@@ -437,6 +437,10 @@ class VpnService extends ChangeNotifier {
       if (_process != null) {
         _addLog('🔄 Terminating process after error...');
         await disconnect();
+      } else {
+        // The CLI never started (or already exited), so disconnect() will
+        // not run — remove the TOML with the plaintext password ourselves.
+        await _configService.deleteConfigFile();
       }
 
       // Land in a real error state so the Home screen shows the error card;

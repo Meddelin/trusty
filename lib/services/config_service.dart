@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
@@ -98,7 +100,9 @@ class ConfigService extends ChangeNotifier {
 
     // Migrate the password to the per-server key: plaintext-in-JSON first,
     // else the legacy single-server keystore entry (kept for downgrade
-    // safety).
+    // safety). If the keystore write fails, keep the plaintext in the
+    // ACTIVE config (never in the list) so loadConfig's own migration can
+    // retry later instead of losing the password forever.
     try {
       final password = legacyPlaintext.isNotEmpty
           ? legacyPlaintext
@@ -108,10 +112,12 @@ class ConfigService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Secure storage migration failed: $e');
+      if (legacyPlaintext.isNotEmpty) json['password'] = legacyPlaintext;
     }
 
     await prefs.setString(_configKey, jsonEncode(json));
-    await prefs.setString(_serversKey, jsonEncode([json]));
+    await prefs.setString(
+        _serversKey, jsonEncode([_stripAppGlobalFields(json)]));
     await prefs.setString(_activeServerKey, id);
     debugPrint('Migrated single config to server list (id: $id)');
 
@@ -167,6 +173,25 @@ class ConfigService extends ChangeNotifier {
       debugPrint('Client random prefix migration failed: $e');
     }
   }
+
+  /// Reduce a full config JSON to a server-list entry: per-server connection
+  /// fields only. Secrets live in the keystore, app-global settings in their
+  /// own keys, and the split-tunnel lists (potentially tens of thousands of
+  /// entries) belong to the active config alone — per-entry copies were
+  /// stale from the moment they were written and made every save re-encode
+  /// megabytes of JSON.
+  static Map<String, dynamic> _stripAppGlobalFields(
+          Map<String, dynamic> json) =>
+      Map.of(json)
+        ..remove('password')
+        ..remove('clientRandomPrefix')
+        ..remove('dns')
+        ..remove('logLevel')
+        ..remove('connectionMode')
+        ..remove('socksPort')
+        ..remove('vpnMode')
+        ..remove('splitTunnelDomains')
+        ..remove('splitTunnelApps');
 
   List<Map<String, dynamic>> _decodeServers(SharedPreferences prefs) {
     try {
@@ -334,9 +359,7 @@ class ConfigService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Secure storage write failed: $e');
     }
-    final json = cfg.toJson()
-      ..remove('password')
-      ..remove('clientRandomPrefix');
+    final json = _stripAppGlobalFields(cfg.toJson());
     final servers = _decodeServers(prefs);
     final idx = servers.indexWhere((s) => s['id'] == cfg.id);
     if (idx >= 0) {
@@ -357,9 +380,7 @@ class ConfigService extends ChangeNotifier {
     await _ensureServerList(prefs);
     final entry = config.copyWith(id: newServerId());
     final servers = _decodeServers(prefs);
-    servers.add(entry.toJson()
-      ..remove('password')
-      ..remove('clientRandomPrefix'));
+    servers.add(_stripAppGlobalFields(entry.toJson()));
     await prefs.setString(_serversKey, jsonEncode(servers));
     try {
       await _secureStorage.write(key: _pwKey(entry.id), value: entry.password);
@@ -539,12 +560,16 @@ class ConfigService extends ChangeNotifier {
 
       await prefs.setString(_configKey, jsonEncode(json));
 
-      final servers = _decodeServers(prefs);
+      // Server-list entries hold only per-server fields; mapping the whole
+      // list also slims fat entries written by older versions.
+      final servers =
+          _decodeServers(prefs).map(_stripAppGlobalFields).toList();
+      final entry = _stripAppGlobalFields(json);
       final idx = servers.indexWhere((s) => s['id'] == cfg.id);
       if (idx >= 0) {
-        servers[idx] = json;
+        servers[idx] = entry;
       } else {
-        servers.add(json);
+        servers.add(entry);
       }
       await prefs.setString(_serversKey, jsonEncode(servers));
       await prefs.setString(_activeServerKey, cfg.id);
@@ -636,22 +661,22 @@ class ConfigService extends ChangeNotifier {
 
       // Merge enabled routing lists into the exclusions (auto-refreshing
       // stale ones within a hard time budget so connect never hangs).
-      var effective = config;
       final listEntries = await collectRoutingEntries(config.vpnMode);
       if (listEntries.isNotEmpty) {
-        effective = config.copyWith(
-          splitTunnelDomains:
-              {...config.splitTunnelDomains, ...listEntries}.toList(),
-        );
-        debugPrint('Merged ${listEntries.length} routing list entries');
+        debugPrint('Merging ${listEntries.length} routing list entries');
       }
-      lastMergedExclusionCount = effective.splitTunnelDomains.length;
-      if (lastMergedExclusionCount > mergedExclusionsSoftLimit) {
-        debugPrint('Merged exclusions ($lastMergedExclusionCount) exceed '
+
+      // Merging and TOML rendering are pure string work that reaches
+      // hundreds of ms at 100k+ entries — run them off the UI isolate so
+      // the "Connecting" animation never freezes.
+      final (toml, mergedCount) =
+          await _mergeAndRenderOffUi(config, listEntries);
+      lastMergedExclusionCount = mergedCount;
+      if (mergedCount > mergedExclusionsSoftLimit) {
+        debugPrint('Merged exclusions ($mergedCount) exceed '
             'the soft limit of $mergedExclusionsSoftLimit');
       }
 
-      final toml = effective.toToml();
       await file.writeAsString(toml);
 
       // Restrict permissions to the owner since the TOML holds the password.
@@ -666,6 +691,22 @@ class ConfigService extends ChangeNotifier {
       debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
+  }
+
+  /// Merge [listEntries] into the config's exclusions and render the TOML in
+  /// a background isolate. Static so the closure captures only its (plain,
+  /// sendable) arguments — never `this`.
+  static Future<(String, int)> _mergeAndRenderOffUi(
+      ServerConfig config, List<String> listEntries) {
+    return Isolate.run(() {
+      final effective = listEntries.isEmpty
+          ? config
+          : config.copyWith(
+              splitTunnelDomains:
+                  {...config.splitTunnelDomains, ...listEntries}.toList(),
+            );
+      return (effective.toToml(), effective.splitTunnelDomains.length);
+    });
   }
 
   /// Delete TOML config file
@@ -799,15 +840,21 @@ class ConfigService extends ChangeNotifier {
     return result;
   }
 
+  /// A bare TLD suffix ("ua" from a ".ua"-style line): a single hostname
+  /// label of 2+ characters starting with a letter — including unicode
+  /// ("рф") and punycode ("xn--p1ai") TLDs, not just ASCII.
+  static final RegExp _bareTldRe =
+      RegExp(r'^\p{L}[\p{L}\p{N}-]*[\p{L}\p{N}]$', unicode: true);
+
   /// Split parsed lines into valid exclusions and a skipped-count. Accepts
-  /// what [classifyExclusion] accepts plus bare TLD suffixes ("ua", from
-  /// ".ua"-style lines) which the client matches as domain suffixes.
+  /// what [classifyExclusion] accepts plus bare TLD suffixes which the
+  /// client matches as domain suffixes.
   static (List<String>, int) validateRoutingEntries(List<String> parsed) {
     final valid = <String>[];
     var skipped = 0;
     for (final e in parsed) {
       if (classifyExclusion(e) != ExclusionKind.invalid ||
-          RegExp(r'^[a-z]{2,}$').hasMatch(e)) {
+          _bareTldRe.hasMatch(e)) {
         valid.add(e);
       } else {
         skipped++;
@@ -815,6 +862,17 @@ class ConfigService extends ChangeNotifier {
     }
     return (valid, skipped);
   }
+
+  /// Parse + validate a downloaded body in a background isolate —
+  /// [validateRoutingEntries] alone costs ~100 ms per 100k entries, enough
+  /// to freeze the refresh spinner. Static so the closures capture only
+  /// their plain, sendable arguments.
+  static Future<(List<String>, int)> _parseAndValidateOffUi(String body) =>
+      Isolate.run(() => validateRoutingEntries(parseRoutingList(body)));
+
+  static Future<(List<String>, int)> _validateEntriesOffUi(
+          List<String> parsed) =>
+      Isolate.run(() => validateRoutingEntries(parsed));
 
   List<RoutingList> _decodeRoutingLists(SharedPreferences prefs) {
     try {
@@ -918,13 +976,31 @@ class ConfigService extends ChangeNotifier {
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
-      return await response
-          .transform(utf8.decoder)
-          .join()
+      if (response.contentLength > _maxListBytes) {
+        throw Exception('List is too large (> 5 MB)');
+      }
+      return await readBodyCapped(response)
           .timeout(const Duration(seconds: 30));
     } finally {
-      client.close();
+      // force: also tears down a socket abandoned mid-body by the size cap
+      // or the timeout above.
+      client.close(force: true);
     }
+  }
+
+  /// Decode [body] as UTF-8 while enforcing the size cap chunk by chunk —
+  /// the cap must abort an oversized download as it streams in, not after
+  /// hundreds of MB have already been buffered in memory.
+  @visibleForTesting
+  static Future<String> readBodyCapped(Stream<List<int>> body) async {
+    final bytes = BytesBuilder(copy: false);
+    await for (final chunk in body) {
+      bytes.add(chunk);
+      if (bytes.length > _maxListBytes) {
+        throw Exception('List is too large (> 5 MB)');
+      }
+    }
+    return utf8.decode(bytes.takeBytes());
   }
 
   /// Fetch a URL and enforce the size cap (also guards geosite includes).
@@ -951,19 +1027,20 @@ class ConfigService extends ChangeNotifier {
     // The cache stores the flat parsed output, so format-specific parsing
     // (including geosite `include:` sub-fetches) happens only here. 'geoip'
     // is line-wise identical to 'plain' (CIDR per line, # comments).
+    // Parsing/validation runs off the UI isolate; geosite parsing stays
+    // here because its `include:` sub-fetches need the injected fetcher.
     Future<void> addBody(String body, {String sourceUrl = ''}) async {
       if (body.length > _maxListBytes) {
         throw Exception('List is too large (> 5 MB)');
       }
-      final parsed = format == 'geosite'
-          ? await parseGeositeList(
+      final (valid, bad) = format == 'geosite'
+          ? await _validateEntriesOffUi(await parseGeositeList(
               body,
               fetchCategory: (category) => sourceUrl.isEmpty
                   ? throw Exception('include: requires a URL source')
                   : _fetchBody(geositeSiblingUrl(sourceUrl, category)),
-            )
-          : parseRoutingList(body);
-      final (valid, bad) = validateRoutingEntries(parsed);
+            ))
+          : await _parseAndValidateOffUi(body);
       skipped += bad;
       entries.addAll(valid);
     }
@@ -1025,13 +1102,11 @@ class ConfigService extends ChangeNotifier {
       }
 
       // Write via temp-file + rename so a concurrent connect-time read never
-      // observes a truncated half-written cache.
+      // observes a truncated (or briefly missing) cache — File.rename
+      // replaces an existing destination file in one step.
       final file = File(await _routingListCachePath(id));
       final tmp = File('${file.path}.tmp');
       await tmp.writeAsString(entries.join('\n'));
-      if (await file.exists()) {
-        await file.delete();
-      }
       await tmp.rename(file.path);
       await _updateRoutingList(
         id,
@@ -1132,18 +1207,31 @@ class ConfigService extends ChangeNotifier {
       }
     }
 
-    final entries = <String>{};
+    // Read + parse the caches off the UI isolate: 100k entries per list is
+    // hundreds of ms of pure string work. Paths are absolute, so the worker
+    // isolate's own working directory is irrelevant.
+    final paths = <String>[];
     for (final l in active) {
-      try {
-        final file = File(await _routingListCachePath(l.id));
-        if (await file.exists()) {
-          entries.addAll(parseRoutingList(await file.readAsString()));
-        }
-      } catch (e) {
-        debugPrint('Error reading routing list ${l.id}: $e');
-      }
+      paths.add(await _routingListCachePath(l.id));
     }
-    return entries.toList();
+    return _parseCachesOffUi(paths);
+  }
+
+  static Future<List<String>> _parseCachesOffUi(List<String> paths) {
+    return Isolate.run(() {
+      final entries = <String>{};
+      for (final path in paths) {
+        try {
+          final file = File(path);
+          if (file.existsSync()) {
+            entries.addAll(parseRoutingList(file.readAsStringSync()));
+          }
+        } catch (_) {
+          // Unreadable cache — same as a missing one: contributes nothing.
+        }
+      }
+      return entries.toList();
+    });
   }
 
   /// Migrate flat splitTunnelDomains to domain groups (one-time)

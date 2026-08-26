@@ -43,6 +43,55 @@ void main() {
     expect(skipped, 2);
   });
 
+  test('validateRoutingEntries accepts unicode and punycode bare TLDs', () {
+    final (valid, skipped) = ConfigService.validateRoutingEntries([
+      'рф', // '.рф' after parseRoutingList strips the dot
+      'бел',
+      'xn--p1ai', // punycode form of .рф
+      'com',
+      'не тлд', // space — not a label
+      '123', // TLDs never start with a digit
+    ]);
+    expect(valid, ['рф', 'бел', 'xn--p1ai', 'com']);
+    expect(skipped, 2);
+  });
+
+  test("'.рф'-style lines survive the download pipeline", () async {
+    final service =
+        ConfigService(fetchUrl: (_) async => '.рф\n.com\nкинопоиск.рф\n');
+    final (entries, skipped, errors) = await service.fetchRoutingSource(
+      urls: ['https://example.com/l.lst'],
+    );
+    expect(errors, isEmpty);
+    expect(skipped, 0);
+    expect(entries.toSet(), {'рф', 'com', 'кинопоиск.рф'});
+  });
+
+  test('readBodyCapped aborts an oversized body while it still streams',
+      () async {
+    var chunksEmitted = 0;
+    Stream<List<int>> hugeBody() async* {
+      final chunk = List<int>.filled(1024 * 1024, 0x61); // 1 MB of 'a'
+      for (var i = 0; i < 100; i++) {
+        chunksEmitted++;
+        yield chunk;
+      }
+    }
+
+    await expectLater(
+      ConfigService.readBodyCapped(hugeBody()),
+      throwsA(predicate((e) => e.toString().contains('too large'))),
+    );
+    expect(chunksEmitted, lessThan(10),
+        reason: 'the size cap must stop consuming the stream right after '
+            'the limit, not buffer all 100 MB first');
+
+    expect(
+      await ConfigService.readBodyCapped(Stream.value(utf8.encode('ok'))),
+      'ok',
+    );
+  });
+
   test('RoutingList JSON round trip and mode matching', () {
     const list = RoutingList(
       id: 'x1',
@@ -305,6 +354,33 @@ EXAMPLE.COM
     final list = (await service.loadRoutingLists()).single;
     expect(list.entryCount, 3);
     expect(list.lastError, '');
+  });
+
+  test('refreshRoutingList replaces an existing cache without a delete gap',
+      () async {
+    final tmp = useTempCwd();
+    SharedPreferences.setMockInitialValues({
+      'routing_lists': jsonEncode([
+        const RoutingList(
+          id: 'u1',
+          name: 'U',
+          type: 'url',
+          urls: ['https://example.com/a.lst'],
+          enabled: true,
+        ).toJson(),
+      ]),
+    });
+
+    var body = 'old.com';
+    final service = ConfigService(fetchUrl: (_) async => body);
+    await service.refreshRoutingList('u1');
+    body = 'new.com\nnew2.com';
+    await service.refreshRoutingList('u1');
+
+    final cache = File(p.join(tmp.path, 'client', 'routing_lists', 'u1.lst'));
+    expect(cache.readAsStringSync().split('\n'), ['new.com', 'new2.com'],
+        reason: 'rename must replace the previous cache in place');
+    expect(File('${cache.path}.tmp').existsSync(), isFalse);
   });
 
   test('collectRoutingEntries merges cached lists and de-duplicates',

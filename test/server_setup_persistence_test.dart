@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:trusty/models/server_config.dart';
 import 'package:trusty/models/server_setup_config.dart';
 import 'package:trusty/models/setup_step.dart';
+import 'package:trusty/services/config_service.dart';
 import 'package:trusty/services/server_setup_service.dart';
 
 void main() {
@@ -184,6 +188,110 @@ void main() {
       await service.loadPersistedResult();
 
       expect(service.lastResult, isNull);
+    });
+  });
+
+  group('applyToClientConfig', () {
+    /// Persist a deploy result and apply it, the post-restart flow (no
+    /// in-memory config, password unknown).
+    Future<void> applyPersistedResult(
+        ConfigService configService, Map<String, Object> result) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('deploy_last_result', jsonEncode(result));
+      final setup = ServerSetupService();
+      await setup.loadPersistedResult();
+      await setup.applyToClientConfig(configService);
+    }
+
+    test('a NEW server never inherits per-server fields of the active one',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final configService = ConfigService();
+      // Active server A with every per-server field set away from defaults.
+      await configService.saveConfig(ServerConfig(
+        hostname: 'a.example.com',
+        address: '1.1.1.1',
+        username: 'ua',
+        password: 'pa',
+        hasIpv6: false,
+        skipVerification: true,
+        upstreamProtocol: 'http3',
+        antiDpi: true,
+        customSni: 'sni.a.example.com',
+        postQuantumGroupEnabled: false,
+        clientRandomPrefix: 'aaaa1111/ff00ff00',
+        vpnMode: VpnMode.selective,
+        splitTunnelDomains: const ['youtube.com'],
+      ));
+
+      await applyPersistedResult(configService, {
+        'host': '203.0.113.5',
+        'domain': 'vpn-b.example.com',
+        'listenPort': 8443,
+        'vpnUsername': 'alice',
+      });
+
+      final active = await configService.loadConfig();
+      expect(active.hostname, 'vpn-b.example.com');
+      expect(active.address, '203.0.113.5');
+      expect(active.port, 8443);
+      expect(active.username, 'alice');
+      // Fresh server → factory defaults; nothing borrowed from A. A's
+      // customSni here would even break TLS against B's certificate.
+      expect(active.hasIpv6, isTrue);
+      expect(active.skipVerification, isFalse);
+      expect(active.upstreamProtocol, 'http2');
+      expect(active.antiDpi, isFalse);
+      expect(active.customSni, isEmpty);
+      expect(active.postQuantumGroupEnabled, isTrue);
+      expect(active.clientRandomPrefix, isEmpty);
+      // App-global settings do carry over.
+      expect(active.vpnMode, VpnMode.selective);
+      expect(active.splitTunnelDomains, ['youtube.com']);
+    });
+
+    test('re-deploying an existing server keeps ITS per-server fields',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final configService = ConfigService();
+      // Server B — the future deploy target — has its own settings.
+      await configService.saveConfig(ServerConfig(
+        hostname: 'vpn-b.example.com',
+        address: '2.2.2.2',
+        username: 'ub',
+        password: 'pb',
+        customSni: 'sni.b.example.com',
+        upstreamProtocol: 'http3',
+      ));
+      final idB = await configService.getActiveServerId();
+      // Server A becomes active with different settings.
+      final current = await configService.loadConfig();
+      await configService.saveConfig(current.copyWith(
+        id: ConfigService.newServerId(),
+        hostname: 'a.example.com',
+        address: '1.1.1.1',
+        username: 'ua',
+        password: 'pa',
+        customSni: '',
+        upstreamProtocol: 'http2',
+        antiDpi: true,
+      ));
+
+      await applyPersistedResult(configService, {
+        'host': '2.2.2.2',
+        'domain': 'vpn-b.example.com',
+        'listenPort': 443,
+        'vpnUsername': 'ub',
+      });
+
+      final active = await configService.loadConfig();
+      expect(active.id, idB);
+      expect(active.customSni, 'sni.b.example.com');
+      expect(active.upstreamProtocol, 'http3');
+      expect(active.antiDpi, isFalse,
+          reason: "A's antiDpi must not leak into B");
+      expect(active.password, 'pb',
+          reason: 'the stored password survives a re-deploy');
     });
   });
 

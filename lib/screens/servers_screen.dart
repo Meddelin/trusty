@@ -631,6 +631,17 @@ class _ServersScreenState extends State<ServersScreen> {
                 icon: Icons.fingerprint,
                 enabled: !isConnected,
                 helperText: AppLocalizations.of(context)!.settingsPrefixHelper,
+                // The value lands in the generated TOML — accept only the
+                // hex prefix[/mask] format the CLI understands, so a pasted
+                // config line or free text is rejected up front.
+                validator: (value) {
+                  final v = value?.trim() ?? '';
+                  if (v.isEmpty ||
+                      RegExp(r'^[0-9a-fA-F]+(/[0-9a-fA-F]+)?$').hasMatch(v)) {
+                    return null;
+                  }
+                  return 'Hex prefix or prefix/mask only (e.g. 24503c49/ffffffff)';
+                },
               ),
               const SizedBox(height: 16),
               _field(

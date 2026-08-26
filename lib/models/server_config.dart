@@ -211,16 +211,19 @@ class ServerConfig {
         ? '[]'
         : '[\n${allExclusions.map((e) => '  "${_tomlEscape(e)}"').join(',\n')}\n]';
 
-    // Safe access to all fields
-    final ll = logLevel;
+    // Safe access to all fields. Every interpolated string goes through
+    // _tomlEscape — loglevel/upstream_protocol come from dropdowns in the UI
+    // but importConfig accepts arbitrary strings, and the prefix is a
+    // free-text field.
+    final ll = _tomlEscape(logLevel);
     final vm = vpnMode.name;
     final p = port;
     final ipv6 = hasIpv6;
     final pwd = _tomlEscape(password);
     final skipVerif = skipVerification;
-    final upProto = upstreamProtocol;
+    final upProto = _tomlEscape(upstreamProtocol);
     final dpi = antiDpi;
-    final crp = clientRandomPrefix;
+    final crp = _tomlEscape(clientRandomPrefix);
     final pqg = postQuantumGroupEnabled;
 
     // Exactly one listener table may be present — the CLI rejects configs

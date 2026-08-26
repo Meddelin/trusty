@@ -99,6 +99,137 @@ void main() {
     expect(secureStore['vpn_password_${config.id}'], 'plain-secret');
   });
 
+  test('keystore failure during migration keeps the plaintext password',
+      () async {
+    // Pre-0.3.3 config with a plaintext password, and a keystore that is
+    // temporarily down (locked Keychain / failing DPAPI). The migration must
+    // not strip the password before it safely reaches the keystore.
+    final legacy = ServerConfig(
+      hostname: 'old.example.com',
+      address: '1.2.3.4',
+      username: 'user1',
+      password: 'plain-secret',
+    ).toJson()
+      ..remove('id');
+    SharedPreferences.setMockInitialValues({
+      'server_config': jsonEncode(legacy),
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      throw PlatformException(code: 'keystore-locked');
+    });
+
+    await ConfigService().loadConfig();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('server_config'), contains('plain-secret'),
+        reason: 'the plaintext must survive until it reaches the keystore');
+    expect(prefs.getString('server_list'), isNot(contains('plain-secret')),
+        reason: 'list entries never carry passwords');
+
+    // Keystore is back: the next load completes the migration.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      final args =
+          (call.arguments as Map?)?.cast<String, dynamic>() ?? const {};
+      final key = args['key'] as String?;
+      switch (call.method) {
+        case 'read':
+          return secureStore[key];
+        case 'write':
+          secureStore[key!] = args['value'] as String? ?? '';
+          return null;
+      }
+      return null;
+    });
+
+    final config = await ConfigService().loadConfig();
+    expect(config.password, 'plain-secret');
+    expect(secureStore['vpn_password_${config.id}'], 'plain-secret');
+    expect(prefs.getString('server_config'), isNot(contains('plain-secret')));
+  });
+
+  test('server_list entries carry no app-global or split-tunnel copies',
+      () async {
+    final service = ConfigService();
+    await service.saveConfig(ServerConfig(
+      hostname: 'a.example.com',
+      address: '1.1.1.1',
+      username: 'ua',
+      password: 'pa',
+      dns: 'tls://1.1.1.1',
+      vpnMode: VpnMode.selective,
+      splitTunnelDomains: ['youtube.com', 'vk.com'],
+      splitTunnelApps: ['game.exe'],
+    ));
+
+    final prefs = await SharedPreferences.getInstance();
+    final entry = (jsonDecode(prefs.getString('server_list')!) as List)
+        .single as Map<String, dynamic>;
+    for (final key in [
+      'password',
+      'clientRandomPrefix',
+      'dns',
+      'logLevel',
+      'connectionMode',
+      'socksPort',
+      'vpnMode',
+      'splitTunnelDomains',
+      'splitTunnelApps',
+    ]) {
+      expect(entry.containsKey(key), isFalse,
+          reason: '$key must not be duplicated into the server list');
+    }
+    // Per-server connection fields stay.
+    expect(entry['hostname'], 'a.example.com');
+    expect(entry['upstreamProtocol'], 'http2');
+
+    // The active config keeps the full picture and still round-trips.
+    expect(prefs.getString('server_config'), contains('youtube.com'));
+    final back = await service.loadConfig();
+    expect(back.splitTunnelDomains, ['youtube.com', 'vk.com']);
+    expect(back.vpnMode, VpnMode.selective);
+  });
+
+  test('fat list entries from older versions are slimmed on the next save',
+      () async {
+    // An entry written by a pre-fix build: full config JSON, split-tunnel
+    // lists included.
+    final fatA = ServerConfig(
+      id: 'srvA',
+      hostname: 'a.example.com',
+      address: '1.1.1.1',
+      username: 'ua',
+      password: '',
+      splitTunnelDomains: ['bloat-a.example.com'],
+    ).toJson()
+      ..remove('password');
+    final fatB = ServerConfig(
+      id: 'srvB',
+      hostname: 'b.example.com',
+      address: '2.2.2.2',
+      username: 'ub',
+      password: '',
+      splitTunnelDomains: ['bloat-b.example.com'],
+    ).toJson()
+      ..remove('password');
+    SharedPreferences.setMockInitialValues({
+      'server_config': jsonEncode(fatA),
+      'server_list': jsonEncode([fatA, fatB]),
+      'active_server_id': 'srvA',
+    });
+
+    final service = ConfigService();
+    await service.saveConfig(await service.loadConfig());
+
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getString('server_list')!;
+    expect(list, isNot(contains('bloat-a.example.com')));
+    expect(list, isNot(contains('bloat-b.example.com')),
+        reason: 'non-active entries must be slimmed too');
+    expect(await service.loadServers(), hasLength(2));
+  });
+
   test('saveConfig never clobbers a stored password with an empty string',
       () async {
     final service = ConfigService();

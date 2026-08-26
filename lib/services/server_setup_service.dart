@@ -556,7 +556,9 @@ class ServerSetupService extends ChangeNotifier {
     // Upload rules.toml for connection filtering
     if (config.generateClientRandomPrefix) {
       await _uploadFile('/opt/trusttunnel/rules.toml', config.generateRulesToml());
-      _addLog('Connection filtering enabled (prefix: ${config.clientRandomPrefix})');
+      // The prefix is a shared access token — never log its value: the log
+      // panel is exactly what users copy into support requests.
+      _addLog('Connection filtering enabled');
     }
 
     // Upload credentials.toml
@@ -729,6 +731,16 @@ class ServerSetupService extends ChangeNotifier {
       username: result.vpnUsername,
       password: password,
       clientRandomPrefix: prefix,
+      // Per-server fields must not leak from the currently active server
+      // into this entry (saveConfig overwrites the whole list entry): a
+      // matched server keeps its own values, a fresh deploy starts from the
+      // defaults — mirroring the per-server set switchServer carries.
+      hasIpv6: match?.hasIpv6 ?? true,
+      skipVerification: match?.skipVerification ?? false,
+      upstreamProtocol: match?.upstreamProtocol ?? 'http2',
+      antiDpi: match?.antiDpi ?? false,
+      customSni: match?.customSni ?? '',
+      postQuantumGroupEnabled: match?.postQuantumGroupEnabled ?? true,
     );
     await configService.saveConfig(updatedConfig);
   }
