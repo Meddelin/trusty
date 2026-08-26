@@ -32,6 +32,12 @@
 - **Compact mode switcher** — the two large mode cards are now a segmented button with a one-line description, freeing vertical space for the actual lists.
 - Duplicate checks now work across groups and the standalone list together, case-insensitively; the group "rename" button is labeled Rename instead of Save.
 
+### Performance
+- **Bulk paste import is linear now** — importing a pasted domain list de-duplicated each line with a `List.contains` scan (quadratic: already noticeable around a thousand lines, minutes at tens of thousands); de-duplication now goes through a `Set`, extracted as a testable `importExclusionList` helper.
+- **Domains tab builds its rows lazily** — the domain list is a `ListView.builder` instead of eagerly constructing a widget for every entry on each rebuild.
+- Saving or writing the config no longer stringifies the entire domain list into the debug log (counts are logged instead) — with merged routing lists that built megabyte-sized log strings on every connect.
+- **Large-list perf tests** — a new suite (`test/perf/large_lists_perf_test.dart`) proves 50 000-entry workloads stay fast and correct: TOML generation, pasted-list import, geosite/geoip parsing, routing-list merging with de-duplication, JSON round-trips of stored structures, and `.lst` cache loading — each asserts both the result and a generous wall-time bound, offline and deterministic.
+
 ### Fixed
 - Saving connection settings no longer resets the VPN mode and split-tunneling lists (the Settings form previously rebuilt the config from scratch).
 
