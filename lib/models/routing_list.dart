@@ -17,6 +17,12 @@ class RoutingList {
   /// Source path for file lists.
   final String sourcePath;
 
+  /// Source format: 'plain' (one domain/IP/CIDR per line), 'geosite'
+  /// (v2fly domain-list-community category) or 'geoip' (v2fly per-country
+  /// CIDR list, line-wise identical to plain). Lists saved before formats
+  /// existed have no stored value and default to 'plain'.
+  final String format;
+
   final bool enabled;
 
   /// Which VPN mode the list applies in: 'selective' | 'general' | 'both'.
@@ -37,6 +43,7 @@ class RoutingList {
     required this.type,
     this.urls = const [],
     this.sourcePath = '',
+    this.format = 'plain',
     this.enabled = false,
     this.appliesTo = 'selective',
     this.lastUpdatedIso = '',
@@ -61,6 +68,7 @@ class RoutingList {
               .toList() ??
           const [],
       sourcePath: json['sourcePath'] as String? ?? '',
+      format: json['format'] as String? ?? 'plain',
       enabled: json['enabled'] as bool? ?? false,
       appliesTo: json['appliesTo'] as String? ?? 'selective',
       lastUpdatedIso: json['lastUpdatedIso'] as String? ?? '',
@@ -75,6 +83,7 @@ class RoutingList {
         'type': type,
         'urls': urls,
         'sourcePath': sourcePath,
+        'format': format,
         'enabled': enabled,
         'appliesTo': appliesTo,
         'lastUpdatedIso': lastUpdatedIso,
@@ -96,6 +105,7 @@ class RoutingList {
       type: type,
       urls: urls,
       sourcePath: sourcePath,
+      format: format,
       enabled: enabled ?? this.enabled,
       appliesTo: appliesTo ?? this.appliesTo,
       lastUpdatedIso: lastUpdatedIso ?? this.lastUpdatedIso,
@@ -104,3 +114,38 @@ class RoutingList {
     );
   }
 }
+
+/// A curated catalog entry for the add-list dialog: a ready source URL and
+/// format, so common lists are one pick instead of a hunt for raw URLs.
+class RoutingPreset {
+  final String name;
+  final String url;
+
+  /// 'geosite' | 'geoip' (see [RoutingList.format]).
+  final String format;
+
+  const RoutingPreset(this.name, this.url, this.format);
+}
+
+const String _geositeBase =
+    'https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/';
+const String _geoipBase =
+    'https://raw.githubusercontent.com/v2fly/geoip/release/text/';
+
+/// Presets offered by the add-list dialog: v2fly community domain categories
+/// and per-country IP blocks. The built-in "Default" list is separate.
+final List<RoutingPreset> routingPresets = [
+  RoutingPreset('YouTube', '${_geositeBase}youtube', 'geosite'),
+  RoutingPreset('Discord', '${_geositeBase}discord', 'geosite'),
+  RoutingPreset('Meta (Facebook / Instagram)', '${_geositeBase}meta', 'geosite'),
+  RoutingPreset('Telegram', '${_geositeBase}telegram', 'geosite'),
+  RoutingPreset('Twitter / X', '${_geositeBase}twitter', 'geosite'),
+  RoutingPreset('Netflix', '${_geositeBase}netflix', 'geosite'),
+  RoutingPreset('OpenAI', '${_geositeBase}openai', 'geosite'),
+  RoutingPreset('Google', '${_geositeBase}google', 'geosite'),
+  RoutingPreset('Russia (IP ranges)', '${_geoipBase}ru.txt', 'geoip'),
+  RoutingPreset('Ukraine (IP ranges)', '${_geoipBase}ua.txt', 'geoip'),
+  RoutingPreset('United States (IP ranges)', '${_geoipBase}us.txt', 'geoip'),
+  RoutingPreset('Netherlands (IP ranges)', '${_geoipBase}nl.txt', 'geoip'),
+  RoutingPreset('Germany (IP ranges)', '${_geoipBase}de.txt', 'geoip'),
+];

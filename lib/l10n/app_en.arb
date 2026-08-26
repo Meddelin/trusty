@@ -176,6 +176,20 @@
       }
     }
   },
+  "splitTunnelSourcePreset": "Preset",
+  "splitTunnelPresetPick": "Ready-made list",
+  "splitTunnelPresetHint": "Curated lists maintained by the v2fly community: domain categories (geosite) and per-country IP ranges (geoip). They update automatically like any URL list.",
+  "splitTunnelExclusionLimitWarning": "{count} exclusions after merging routing lists (soft limit {limit}) — connection setup may be slow. Consider disabling some routing lists.",
+  "@splitTunnelExclusionLimitWarning": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
   "splitTunnelSuggestionTitle": "Detected in logs — Add to exclusions?",
   "splitTunnelSuggestionAddToGroup": "Add to group",
   "splitTunnelSuggestionAddStandalone": "Add standalone",

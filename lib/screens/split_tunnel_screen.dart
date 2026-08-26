@@ -1581,6 +1581,8 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
 
 // ── Add routing list dialog ──
 
+enum _ListSource { preset, url, file }
+
 class _AddRoutingListDialog extends StatefulWidget {
   final ConfigService configService;
 
@@ -1594,7 +1596,8 @@ class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
   final _name = TextEditingController();
   final _urls = TextEditingController();
   final _path = TextEditingController();
-  bool _fromFile = false;
+  _ListSource _source = _ListSource.preset;
+  RoutingPreset? _preset;
   bool _busy = false;
   String? _checkResult;
   String? _error;
@@ -1627,8 +1630,23 @@ class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
     }
   }
 
-  bool get _sourceFilled =>
-      _fromFile ? _path.text.trim().isNotEmpty : _urlList.isNotEmpty;
+  bool get _sourceFilled => switch (_source) {
+        _ListSource.preset => _preset != null,
+        _ListSource.url => _urlList.isNotEmpty,
+        _ListSource.file => _path.text.trim().isNotEmpty,
+      };
+
+  List<String> get _sourceUrls => switch (_source) {
+        _ListSource.preset => [_preset!.url],
+        _ListSource.url => _urlList,
+        _ListSource.file => const [],
+      };
+
+  String get _sourceFile =>
+      _source == _ListSource.file ? _path.text.trim() : '';
+
+  String get _sourceFormat =>
+      _source == _ListSource.preset ? _preset!.format : 'plain';
 
   /// Dry-run fetch: shows "Found N valid entries (M skipped)" before saving.
   Future<void> _check() async {
@@ -1640,8 +1658,9 @@ class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
     try {
       final (entries, skipped, errors) = await widget.configService
           .fetchRoutingSource(
-            urls: _fromFile ? const [] : _urlList,
-            filePath: _fromFile ? _path.text.trim() : '',
+            urls: _sourceUrls,
+            filePath: _sourceFile,
+            format: _sourceFormat,
           );
       if (!mounted) return;
       setState(() {
@@ -1657,9 +1676,12 @@ class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
   }
 
   Future<void> _add() async {
-    final name = _name.text.trim().isEmpty
-        ? (_fromFile ? 'Local list' : 'Custom list')
-        : _name.text.trim();
+    final fallbackName = switch (_source) {
+      _ListSource.preset => _preset!.name,
+      _ListSource.url => 'Custom list',
+      _ListSource.file => 'Local list',
+    };
+    final name = _name.text.trim().isEmpty ? fallbackName : _name.text.trim();
     setState(() {
       _busy = true;
       _error = null;
@@ -1667,8 +1689,9 @@ class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
     try {
       final list = await widget.configService.addRoutingList(
         name: name,
-        urls: _fromFile ? const [] : _urlList,
-        filePath: _fromFile ? _path.text.trim() : '',
+        urls: _sourceUrls,
+        filePath: _sourceFile,
+        format: _sourceFormat,
       );
       if (mounted) Navigator.pop(context, list);
     } catch (e) {
@@ -1694,9 +1717,11 @@ class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'A plain-text list: one domain, IP or CIDR per line '
-              '(# comments allowed). URL lists refresh automatically '
-              'when older than 24 hours.',
+              _source == _ListSource.preset
+                  ? AppLocalizations.of(context)!.splitTunnelPresetHint
+                  : 'A plain-text list: one domain, IP or CIDR per line '
+                      '(# comments allowed). URL lists refresh automatically '
+                      'when older than 24 hours.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),
@@ -1711,29 +1736,61 @@ class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            SegmentedButton<bool>(
+            SegmentedButton<_ListSource>(
               showSelectedIcon: false,
-              segments: const [
+              segments: [
                 ButtonSegment(
-                  value: false,
+                  value: _ListSource.preset,
+                  icon: const Icon(Icons.category_outlined, size: 18),
+                  label: Text(
+                      AppLocalizations.of(context)!.splitTunnelSourcePreset),
+                ),
+                const ButtonSegment(
+                  value: _ListSource.url,
                   icon: Icon(Icons.link, size: 18),
                   label: Text('From URL'),
                 ),
-                ButtonSegment(
-                  value: true,
+                const ButtonSegment(
+                  value: _ListSource.file,
                   icon: Icon(Icons.description_outlined, size: 18),
                   label: Text('From file'),
                 ),
               ],
-              selected: {_fromFile},
+              selected: {_source},
               onSelectionChanged: (v) => setState(() {
-                _fromFile = v.first;
+                _source = v.first;
                 _checkResult = null;
                 _error = null;
               }),
             ),
             const SizedBox(height: 12),
-            if (_fromFile)
+            if (_source == _ListSource.preset)
+              DropdownButtonFormField<RoutingPreset>(
+                initialValue: _preset,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText:
+                      AppLocalizations.of(context)!.splitTunnelPresetPick,
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                items: [
+                  for (final p in routingPresets)
+                    DropdownMenuItem(value: p, child: Text(p.name)),
+                ],
+                onChanged: (p) => setState(() {
+                  // Follow the picked preset's name unless the user typed
+                  // their own.
+                  if (_name.text.trim().isEmpty ||
+                      _name.text == _preset?.name) {
+                    _name.text = p?.name ?? '';
+                  }
+                  _preset = p;
+                  _checkResult = null;
+                  _error = null;
+                }),
+              )
+            else if (_source == _ListSource.file)
               Row(
                 children: [
                   Expanded(

@@ -9,10 +9,19 @@ import '../models/routing_list.dart';
 import '../models/server_config.dart';
 import '../utils/exclusion_parser.dart';
 import '../utils/localization_helper.dart';
+import '../utils/routing_source_parser.dart';
 import '../models/domain_group.dart';
 
 /// Service for managing application configuration
 class ConfigService extends ChangeNotifier {
+  /// [fetchUrl] is a test seam for everything routing lists download
+  /// (sources and geosite `include:` sub-fetches); defaults to a plain
+  /// HTTP GET.
+  ConfigService({Future<String> Function(String url)? fetchUrl})
+      : _fetchUrl = fetchUrl ?? _httpGet;
+
+  final Future<String> Function(String url) _fetchUrl;
+
   static const String _configKey = 'server_config';
   static const String _serversKey = 'server_list';
   static const String _activeServerKey = 'active_server_id';
@@ -595,6 +604,11 @@ class ConfigService extends ChangeNotifier {
         );
         debugPrint('Merged ${listEntries.length} routing list entries');
       }
+      lastMergedExclusionCount = effective.splitTunnelDomains.length;
+      if (lastMergedExclusionCount > mergedExclusionsSoftLimit) {
+        debugPrint('Merged exclusions ($lastMergedExclusionCount) exceed '
+            'the soft limit of $mergedExclusionsSoftLimit');
+      }
 
       final toml = effective.toToml();
       await file.writeAsString(toml);
@@ -715,6 +729,15 @@ class ConfigService extends ChangeNotifier {
 
   static const int _maxListBytes = 5 * 1024 * 1024;
   static const int _maxListEntries = 100000;
+
+  /// Soft ceiling on merged exclusions: above this the config still works,
+  /// but tunnel setup slows down noticeably, so the app warns instead of
+  /// blocking the connect.
+  static const int mergedExclusionsSoftLimit = 20000;
+
+  /// Total exclusion count of the last [writeConfigFile] merge — the connect
+  /// path turns counts above [mergedExclusionsSoftLimit] into a warning.
+  int lastMergedExclusionCount = 0;
 
   /// Parse a downloaded routing list: one domain / IP / CIDR per line,
   /// `#` comments and blank lines ignored, ".tld"-style entries normalized
@@ -845,22 +868,61 @@ class ConfigService extends ChangeNotifier {
   Future<void> setRoutingListAppliesTo(String id, String appliesTo) =>
       _updateRoutingList(id, (l) => l.copyWith(appliesTo: appliesTo));
 
+  static Future<String> _httpGet(String url) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.getUrl(Uri.parse(url));
+      final response =
+          await request.close().timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      return await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 30));
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Fetch a URL and enforce the size cap (also guards geosite includes).
+  Future<String> _fetchBody(String url) async {
+    final body = await _fetchUrl(url);
+    if (body.length > _maxListBytes) {
+      throw Exception('List is too large (> 5 MB)');
+    }
+    return body;
+  }
+
   /// Fetch and validate a routing source without saving anything — used by
   /// the add-list dialog's Check step and by [refreshRoutingList].
   /// Returns (valid entries, skipped count, per-source errors).
   Future<(List<String>, int, List<String>)> fetchRoutingSource({
     List<String> urls = const [],
     String filePath = '',
+    String format = 'plain',
   }) async {
     final entries = <String>{};
     var skipped = 0;
     final errors = <String>[];
 
-    Future<void> addBody(String body) async {
+    // The cache stores the flat parsed output, so format-specific parsing
+    // (including geosite `include:` sub-fetches) happens only here. 'geoip'
+    // is line-wise identical to 'plain' (CIDR per line, # comments).
+    Future<void> addBody(String body, {String sourceUrl = ''}) async {
       if (body.length > _maxListBytes) {
         throw Exception('List is too large (> 5 MB)');
       }
-      final (valid, bad) = validateRoutingEntries(parseRoutingList(body));
+      final parsed = format == 'geosite'
+          ? await parseGeositeList(
+              body,
+              fetchCategory: (category) => sourceUrl.isEmpty
+                  ? throw Exception('include: requires a URL source')
+                  : _fetchBody(geositeSiblingUrl(sourceUrl, category)),
+            )
+          : parseRoutingList(body);
+      final (valid, bad) = validateRoutingEntries(parsed);
       skipped += bad;
       entries.addAll(valid);
     }
@@ -868,29 +930,13 @@ class ConfigService extends ChangeNotifier {
     if (filePath.isNotEmpty) {
       await addBody(await File(filePath).readAsString());
     } else {
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 10);
-      try {
-        for (final url in urls) {
-          try {
-            final request = await client.getUrl(Uri.parse(url));
-            final response =
-                await request.close().timeout(const Duration(seconds: 20));
-            if (response.statusCode != 200) {
-              throw Exception('HTTP ${response.statusCode}');
-            }
-            final body = await response
-                .transform(utf8.decoder)
-                .join()
-                .timeout(const Duration(seconds: 30));
-            await addBody(body);
-          } catch (e) {
-            // Partial success: one dead mirror must not kill the refresh.
-            errors.add('$url: $e');
-          }
+      for (final url in urls) {
+        try {
+          await addBody(await _fetchBody(url), sourceUrl: url);
+        } catch (e) {
+          // Partial success: one dead mirror must not kill the refresh.
+          errors.add('$url: $e');
         }
-      } finally {
-        client.close();
       }
     }
 
@@ -922,6 +968,7 @@ class ConfigService extends ChangeNotifier {
       final (entries, _, errors) = await fetchRoutingSource(
         urls: list.type == 'file' ? const [] : list.urls,
         filePath: list.type == 'file' ? list.sourcePath : '',
+        format: list.format,
       );
 
       // A "partial success" that gutted the list (e.g. the main source of
@@ -968,9 +1015,10 @@ class ConfigService extends ChangeNotifier {
     required String name,
     List<String> urls = const [],
     String filePath = '',
+    String format = 'plain',
   }) async {
-    final (entries, _, _) =
-        await fetchRoutingSource(urls: urls, filePath: filePath);
+    final (entries, _, _) = await fetchRoutingSource(
+        urls: urls, filePath: filePath, format: format);
 
     final list = RoutingList(
       id: newServerId(),
@@ -978,6 +1026,7 @@ class ConfigService extends ChangeNotifier {
       type: filePath.isNotEmpty ? 'file' : 'url',
       urls: urls,
       sourcePath: filePath,
+      format: format,
       enabled: true,
       appliesTo: 'selective',
       lastUpdatedIso: DateTime.now().toIso8601String(),

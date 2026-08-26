@@ -411,6 +411,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get splitTunnelSourcePreset => 'Preset';
+
+  @override
+  String get splitTunnelPresetPick => 'Ready-made list';
+
+  @override
+  String get splitTunnelPresetHint =>
+      'Curated lists maintained by the v2fly community: domain categories (geosite) and per-country IP ranges (geoip). They update automatically like any URL list.';
+
+  @override
+  String splitTunnelExclusionLimitWarning(int count, int limit) {
+    return '$count exclusions after merging routing lists (soft limit $limit) — connection setup may be slow. Consider disabling some routing lists.';
+  }
+
+  @override
   String get splitTunnelSuggestionTitle =>
       'Detected in logs — Add to exclusions?';
 

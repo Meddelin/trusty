@@ -814,6 +814,30 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 domain} other{{count} domains}}'**
   String splitTunnelDomainCount(int count);
 
+  /// No description provided for @splitTunnelSourcePreset.
+  ///
+  /// In en, this message translates to:
+  /// **'Preset'**
+  String get splitTunnelSourcePreset;
+
+  /// No description provided for @splitTunnelPresetPick.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready-made list'**
+  String get splitTunnelPresetPick;
+
+  /// No description provided for @splitTunnelPresetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Curated lists maintained by the v2fly community: domain categories (geosite) and per-country IP ranges (geoip). They update automatically like any URL list.'**
+  String get splitTunnelPresetHint;
+
+  /// No description provided for @splitTunnelExclusionLimitWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} exclusions after merging routing lists (soft limit {limit}) — connection setup may be slow. Consider disabling some routing lists.'**
+  String splitTunnelExclusionLimitWarning(int count, int limit);
+
   /// No description provided for @splitTunnelSuggestionTitle.
   ///
   /// In en, this message translates to:
