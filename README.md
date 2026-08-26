@@ -19,6 +19,7 @@
 
 - Material Design 3 interface with light/dark theme
 - One-click VPN connection — connects as soon as the tunnel is up, disconnects instantly
+- **Two connection modes** — full-system VPN through a TUN adapter, or a local SOCKS5 proxy on `127.0.0.1` (no virtual adapter / Wintun required)
 - **Multiple servers** — keep a list of servers on the Servers tab and switch with one click (or from the Home screen switcher); per-server passwords and connection-filtering prefixes in the OS keystore
 - **Server deployment to VPS** — automatic setup via SSH, with optional connection filtering (anti-probe TLS prefix); a deployed server is added to the list without touching existing ones
 - **Ready-made routing lists** — one-click "sites blocked in Russia" preset ([itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains)) plus your own lists from a GitHub raw URL (auto-updating every 24h) or a local file
@@ -112,6 +113,15 @@ See [CONFIGURATION.md](CONFIGURATION.md#remote-server-deployment) for details.
 
 Advanced options: IPv6, Anti-DPI, post-quantum key exchange, custom SNI, log level, certificate verification toggle, and the on-window-close behavior (ask / minimize / exit). See [CONFIGURATION.md](CONFIGURATION.md) for all of them.
 
+## Connection Modes
+
+Settings → Application lets you pick how the client listens for traffic (applies on the next connect; both modes share the same servers and settings):
+
+- **VPN (TUN)** — the default. Routes **all system traffic** through a virtual network adapter (Wintun on Windows, utun on macOS). Requires administrator rights and, on Windows, `wintun.dll` next to the CLI.
+- **Proxy (SOCKS5)** — the client runs a local SOCKS5 proxy on `127.0.0.1:<port>` (default 1080, loopback only) and creates **no network interface** — Wintun is not used in this mode. Point individual applications (or the system proxy settings) at the proxy; only that traffic goes through the tunnel. Split-tunnel rules apply to the proxied traffic. Useful when a virtual adapter can't be created at all.
+
+> Note: on Windows the app currently still asks for administrator rights at startup even in SOCKS5 mode (the elevation is static in the exe manifest). Removing that requirement for SOCKS5-only use is planned separately.
+
 ## Split Tunneling
 
 Two modes:
@@ -137,7 +147,7 @@ Domain groups with auto-discovery: when adding a single domain, Trusty finds rel
 | | Windows | macOS |
 |---|---|---|
 | CLI | `trusttunnel_client.exe` | `trusttunnel_client` |
-| TUN driver | Wintun (`wintun.dll`) | Built-in utun |
+| TUN driver | Wintun (`wintun.dll`) — TUN mode only | Built-in utun — TUN mode only |
 | Tray icon | `.ico` | `.png` |
 | App discovery | Installed Apps (registry) + Microsoft Store, with app icons; running processes in search | `/Applications`, `/System/Applications`; running processes in search |
 | Code signing | Not required | None (Right-click → Open once) |
@@ -153,6 +163,7 @@ Domain groups with auto-discovery: when adding a single domain, Trusty finds rel
 - Close other VPN clients (AmneziaVPN, WireGuard, etc.)
 - Wintun driver can only be used by one application at a time
 - Reconnecting right after a disconnect is handled automatically — Trusty waits for the driver to release before launching
+- Applies to TUN mode only — SOCKS5 mode does not use Wintun (switch in Settings → Connection mode if the adapter can't be created on your system)
 
 ### "SSH host key changed — possible MITM" (Server tab)
 - If you rebuilt/reinstalled the VPS, press **Trust new host key & retry**

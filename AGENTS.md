@@ -53,6 +53,7 @@ Multiple servers are stored in SharedPreferences; `server_config` remains the si
 - Client random prefixes: OS keystore, one `client_random_prefix_<id>` key per server (plaintext values in stored JSON migrate on first access; unlike the password, `''` is a real value and is written as-is)
 - `routing_lists` (JSON array of `RoutingList`) + `client/routing_lists/<id>.lst` caches — ready-made routing lists (built-in blocked-in-Russia preset + user/preset URL/file lists), merged into exclusions at TOML-write time per each list's `appliesTo` mode; URL lists auto-refresh at connect when older than 24h (8s budget). Sources may be `plain`, v2fly `geosite` or `geoip` (`format` field; absent = plain) — caches always hold the flat parsed entries, so only the download path (`utils/routing_source_parser.dart`, incl. geosite `include:` sub-fetches) is format-aware. Legacy `routing_preset_*` keys migrate automatically.
 - `app_dns`, `app_log_level` — app-global settings (seeded from the active config once; server entries may carry stale copies that are ignored)
+- `app_connection_mode` (`tun` | `socks5`; absent = tun), `app_socks_port` (default 1080) — app-global connection mode; same stale-copy rule. In `socks5` the TOML gets `[listener.socks]` (loopback only) instead of `[listener.tun]`, and `VpnService` skips all Wintun waits/hints and the macOS sudo path
 - `deploy_form_config`, `deploy_last_result` — non-secret VPS-deploy form defaults and the persisted outcome of the last successful deploy (its generated client_random_prefix lives in the keystore under `deploy_last_prefix`)
 - `banner_dismissed_*`, `update_dismissed_version` — persistent dismissals of InfoBanners / the update banner
 
@@ -61,7 +62,7 @@ Multiple servers are stored in SharedPreferences; `server_config` remains the si
 ### Connection Flow
 1. User clicks Connect → `HomeScreen._handleButtonPress()`
 2. `ConfigService.loadConfig()` → SharedPreferences
-3. **macOS only:** `VpnService._ensureMacOSPrivileges(exePath)` — checks setuid bit via `stat -f %Sp`; if missing, calls `osascript` to show macOS password dialog and runs `chmod u+s` (one-time per install)
+3. **macOS + TUN mode only:** `VpnService._ensureMacOSPrivileges(exePath)` — checks setuid bit via `stat -f %Sp`; if missing, calls `osascript` to show macOS password dialog and runs `chmod u+s` (one-time per install). SOCKS5 mode needs no privileges and launches the binary directly (no sudo)
 4. `ConfigService.writeConfigFile()` → TOML at `./client/trusttunnel_client.toml`
 5. `VpnService.connect()` → spawns CLI with `--config` and `--loglevel`
 6. stdout/stderr captured, parsed for log levels; consecutive similar lines collapsed via `_addLog()` deduplication
@@ -89,7 +90,7 @@ Multiple servers are stored in SharedPreferences; `server_config` remains the si
 
 Key platform checks in code:
 - `config_service.dart`: `getClientDirectory()`, `getTrustTunnelExecutable()`
-- `vpn_service.dart`: `_ensureMacOSPrivileges()` + `_hasMacOSSetuid()` (macOS); Wintun waits in `connect()`, `disconnect()`, `shutdown()` (Windows, 4 places)
+- `vpn_service.dart`: `_ensureMacOSPrivileges()` + `_hasMacOSSetuid()` (macOS); Wintun waits in `connect()`, `disconnect()`, `shutdown()` (Windows, 4 places) — all gated off in SOCKS5 mode (`classifyStartupFailure` keeps the wintun/admin error hints TUN-only)
 - `split_tunnel_screen.dart`: `_getInstalledAppsWindows()` / `_getInstalledAppsMacOS()`
 - `main.dart`: tray icon path
 - `home_screen.dart`: help text (exe name)
@@ -159,8 +160,8 @@ Both download the **latest** CLI from [TrustTunnelClient releases](https://githu
 - [ ] No auto-download CLI at runtime
 - [ ] Routing preset updates are manual (refresh button); no scheduled auto-update
 - [ ] Limited tests (model/parser unit tests; no widget/integration coverage)
-- [ ] SOCKS5 listener not in GUI (TUN only)
 - [ ] No auto-reconnect
+- [ ] SOCKS5 mode still requests admin at app startup on Windows (static `requireAdministrator` manifest; on-demand elevation would break CLI stdout capture)
 - [ ] Deep-link import (`tt://?` format, `--deeplink` flag) not implemented
 
 ## Upstream

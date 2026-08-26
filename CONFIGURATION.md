@@ -348,6 +348,16 @@ Controls what happens when you close the main window.
 
 Applied immediately — this setting is not part of the server configuration and doesn't need Save.
 
+### Connection Mode
+
+App-global (shared by all servers), chosen in Settings → Application; applies on the next connect and is locked while a connection is active.
+
+**Modes:**
+- **VPN (TUN)** (default): routes all system traffic through a virtual network adapter — Wintun on Windows (requires administrator rights and `wintun.dll`), utun on macOS.
+- **Proxy (SOCKS5)**: the client listens on `127.0.0.1:<port>` (default 1080; loopback only, configurable 1–65535) as a SOCKS5 proxy and creates no network interface — Wintun is not used. Only applications pointed at the proxy (directly or via the system proxy settings) go through the tunnel; split-tunnel rules apply to that proxied traffic. Use it when a virtual adapter cannot be created on your system.
+
+On Windows the app currently still requests administrator rights at startup even in SOCKS5 mode (static manifest elevation).
+
 ## Split Tunneling
 
 Split tunneling allows selective routing of traffic through the VPN.
@@ -502,6 +512,14 @@ included_routes = ["0.0.0.0/0", "2000::/3"]
 excluded_routes = ["0.0.0.0/8", "10.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/3"]
 mtu_size = 1280
 change_system_dns = true
+```
+
+In SOCKS5 [connection mode](#connection-mode) the `[listener.tun]` table is replaced by a SOCKS listener (the CLI accepts exactly one listener table):
+
+```toml
+[listener]
+[listener.socks]
+address = "127.0.0.1:1080"
 ```
 
 **File location:**
