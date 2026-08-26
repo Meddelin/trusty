@@ -52,6 +52,20 @@ class HomeScreen extends StatelessWidget {
                   _ConnectionTimer(since: vpnService.connectedAt!),
                 ],
 
+                // SOCKS5 mode: there is no system-wide tunnel — show the
+                // proxy address apps must be pointed at.
+                if (status == VpnStatus.connected &&
+                    vpnService.socksAddress != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    AppLocalizations.of(context)!
+                        .homeSocksProxy(vpnService.socksAddress!),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
+                ],
+
                 const SizedBox(height: 32),
 
                 // Quick server switcher (hidden when only one server is saved)

@@ -622,6 +622,60 @@ abstract class AppLocalizations {
   /// **'Log Level'**
   String get settingsLogLevel;
 
+  /// No description provided for @settingsConnectionMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection mode'**
+  String get settingsConnectionMode;
+
+  /// No description provided for @settingsConnectionModeTun.
+  ///
+  /// In en, this message translates to:
+  /// **'VPN (TUN)'**
+  String get settingsConnectionModeTun;
+
+  /// No description provided for @settingsConnectionModeSocks.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy (SOCKS5)'**
+  String get settingsConnectionModeSocks;
+
+  /// No description provided for @settingsConnectionModeTunHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Routes all system traffic through a virtual network adapter (Wintun on Windows). Requires administrator rights.'**
+  String get settingsConnectionModeTunHint;
+
+  /// No description provided for @settingsConnectionModeSocksHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Runs a local SOCKS5 proxy on 127.0.0.1 — no virtual adapter or Wintun needed. Only apps you point at the proxy (or the system proxy settings) go through the VPN.'**
+  String get settingsConnectionModeSocksHint;
+
+  /// No description provided for @settingsConnectionModeLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect to change the connection mode.'**
+  String get settingsConnectionModeLocked;
+
+  /// No description provided for @settingsSocksPort.
+  ///
+  /// In en, this message translates to:
+  /// **'SOCKS5 port'**
+  String get settingsSocksPort;
+
+  /// No description provided for @settingsSocksPortHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'The proxy listens on 127.0.0.1 only'**
+  String get settingsSocksPortHelper;
+
+  /// No description provided for @settingsSocksPortError.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a port between 1 and 65535'**
+  String get settingsSocksPortError;
+
   /// No description provided for @settingsSectionAdvanced.
   ///
   /// In en, this message translates to:
@@ -687,6 +741,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Changes are saved automatically and will apply after the VPN reconnects'**
   String get splitTunnelWarningConnected;
+
+  /// No description provided for @splitTunnelSocksModeBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'SOCKS5 proxy mode is active. These rules apply to connections that go through the local proxy; apps not pointed at the proxy bypass the VPN — and these lists — entirely.'**
+  String get splitTunnelSocksModeBanner;
 
   /// No description provided for @splitTunnelVpnMode.
   ///
@@ -1167,6 +1227,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Download'**
   String get homeUpdateDownload;
+
+  /// No description provided for @homeSocksProxy.
+  ///
+  /// In en, this message translates to:
+  /// **'SOCKS5 proxy · {address}'**
+  String homeSocksProxy(String address);
 }
 
 class _AppLocalizationsDelegate

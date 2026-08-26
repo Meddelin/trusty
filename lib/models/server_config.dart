@@ -29,6 +29,13 @@ class ServerConfig {
   final String clientRandomPrefix;
   final bool postQuantumGroupEnabled;
 
+  /// App-global (like [dns]/[logLevel]): 'tun' (full-system VPN through a
+  /// virtual adapter) or 'socks5' (local proxy, no adapter/wintun needed).
+  final String connectionMode;
+
+  /// Local SOCKS5 proxy port; the listener binds to 127.0.0.1 only.
+  final int socksPort;
+
   // Split tunneling settings
   final VpnMode vpnMode;
   final List<String> splitTunnelDomains;
@@ -51,6 +58,8 @@ class ServerConfig {
     this.customSni = '',
     this.clientRandomPrefix = '',
     this.postQuantumGroupEnabled = true,
+    this.connectionMode = 'tun',
+    this.socksPort = 1080,
     this.vpnMode = VpnMode.general,
     this.splitTunnelDomains = const [],
     this.splitTunnelApps = const [],
@@ -99,6 +108,8 @@ class ServerConfig {
       'customSni': customSni,
       'clientRandomPrefix': clientRandomPrefix,
       'postQuantumGroupEnabled': postQuantumGroupEnabled,
+      'connectionMode': connectionMode,
+      'socksPort': socksPort,
       'vpnMode': vpnMode.name,
       'splitTunnelDomains': splitTunnelDomains,
       'splitTunnelApps': splitTunnelApps,
@@ -136,6 +147,10 @@ class ServerConfig {
       customSni: customSni,
       clientRandomPrefix: clientRandomPrefix,
       postQuantumGroupEnabled: postQuantumGroupEnabled,
+      // Unknown values (and absent keys, i.e. pre-0.4.0 configs) mean TUN.
+      connectionMode:
+          json['connectionMode'] == 'socks5' ? 'socks5' : 'tun',
+      socksPort: json['socksPort'] as int? ?? 1080,
       vpnMode: VpnMode.values.firstWhere(
         (e) => e.name == json['vpnMode'],
         orElse: () => VpnMode.general,
@@ -177,6 +192,9 @@ class ServerConfig {
     if (username.isEmpty) {
       throw Exception('Username cannot be empty');
     }
+    if (isSocksMode && (socksPort < 1 || socksPort > 65535)) {
+      throw Exception('SOCKS5 port must be between 1 and 65535');
+    }
 
     // Generate DNS upstreams list. The field accepts several upstreams
     // separated by commas/whitespace (e.g. plain IP + DoH fallback).
@@ -204,6 +222,36 @@ class ServerConfig {
     final dpi = antiDpi;
     final crp = clientRandomPrefix;
     final pqg = postQuantumGroupEnabled;
+
+    // Exactly one listener table may be present — the CLI rejects configs
+    // that specify both [listener.tun] and [listener.socks].
+    // (The first line after ''' is a deliberate blank: Dart strips the
+    // newline right after the opening quotes.)
+    final listenerSection = isSocksMode
+        ? '''
+
+[listener.socks]
+# IP address and port to bind the SOCKS5 proxy.
+# Loopback only: the proxy is never reachable from other machines.
+address = "$socksProxyAddress"
+'''
+        : '''
+
+[listener.tun]
+# Name of the interface used for connections made by the VPN client.
+# On Linux and Windows, it is detected automatically if not specified.
+# On macOS, it defaults to `en0` if not specified.
+# On Windows, an interface index as shown by `route print`, written as a string, may be used instead of a name.
+bound_if = ""
+# Routes in CIDR notation to set to the virtual interface
+included_routes = ["0.0.0.0/0", "2000::/3"]
+# Routes in CIDR notation to exclude from routing through the virtual interface
+excluded_routes = ["0.0.0.0/8", "10.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/3"]
+# MTU size on the interface
+mtu_size = 1280
+# Allow changing system DNS servers
+change_system_dns = true
+''';
 
     return '''# Logging level [info, debug, trace]
 loglevel = "$ll"
@@ -285,22 +333,7 @@ custom_sni = "${_tomlEscape(customSni)}"
 #   * socks: SOCKS5 proxy with UDP support,
 #   * tun: TUN device.
 [listener]
-
-[listener.tun]
-# Name of the interface used for connections made by the VPN client.
-# On Linux and Windows, it is detected automatically if not specified.
-# On macOS, it defaults to `en0` if not specified.
-# On Windows, an interface index as shown by `route print`, written as a string, may be used instead of a name.
-bound_if = ""
-# Routes in CIDR notation to set to the virtual interface
-included_routes = ["0.0.0.0/0", "2000::/3"]
-# Routes in CIDR notation to exclude from routing through the virtual interface
-excluded_routes = ["0.0.0.0/8", "10.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/3"]
-# MTU size on the interface
-mtu_size = 1280
-# Allow changing system DNS servers
-change_system_dns = true
-''';
+$listenerSection''';
   }
 
   /// What lists and dropdowns show for this server.
@@ -317,6 +350,11 @@ change_system_dns = true
       .split(RegExp(r'[\s,]+'))
       .where((s) => s.isNotEmpty)
       .toList();
+
+  bool get isSocksMode => connectionMode == 'socks5';
+
+  /// Where the SOCKS5 listener binds (and what apps must be pointed at).
+  String get socksProxyAddress => '127.0.0.1:$socksPort';
 
   /// Create a copy with updated fields
   ServerConfig copyWith({
@@ -336,6 +374,8 @@ change_system_dns = true
     String? customSni,
     String? clientRandomPrefix,
     bool? postQuantumGroupEnabled,
+    String? connectionMode,
+    int? socksPort,
     VpnMode? vpnMode,
     List<String>? splitTunnelDomains,
     List<String>? splitTunnelApps,
@@ -357,6 +397,8 @@ change_system_dns = true
       customSni: customSni ?? this.customSni,
       clientRandomPrefix: clientRandomPrefix ?? this.clientRandomPrefix,
       postQuantumGroupEnabled: postQuantumGroupEnabled ?? this.postQuantumGroupEnabled,
+      connectionMode: connectionMode ?? this.connectionMode,
+      socksPort: socksPort ?? this.socksPort,
       vpnMode: vpnMode ?? this.vpnMode,
       splitTunnelDomains: splitTunnelDomains ?? this.splitTunnelDomains,
       splitTunnelApps: splitTunnelApps ?? this.splitTunnelApps,

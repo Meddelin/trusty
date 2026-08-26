@@ -631,6 +631,11 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
           return const Center(child: CircularProgressIndicator());
         }
 
+        // In SOCKS5 mode the client core still applies these rules, but only
+        // to traffic that actually reaches the local proxy — say so honestly.
+        final socksMode =
+            context.watch<ConfigService>().connectionModeCache == 'socks5';
+
         return Column(
           children: [
             // Everything stays editable while connected — changes are saved
@@ -642,6 +647,14 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                 message: AppLocalizations.of(
                   context,
                 )!.splitTunnelWarningConnected,
+                margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              ),
+            if (socksMode)
+              InfoBanner(
+                severity: BannerSeverity.info,
+                message: AppLocalizations.of(
+                  context,
+                )!.splitTunnelSocksModeBanner,
                 margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               ),
             Padding(

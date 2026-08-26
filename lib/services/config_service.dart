@@ -34,6 +34,11 @@ class ConfigService extends ChangeNotifier {
   // now they are single keys, seeded from the active config on first run.
   static const String _appDnsKey = 'app_dns';
   static const String _appLogLevelKey = 'app_log_level';
+  // Connection mode ('tun' | 'socks5'; absent = tun) and the SOCKS5 proxy
+  // port. New in 0.4.0, so unlike DNS/log level nothing is seeded from
+  // server entries.
+  static const String _appConnectionModeKey = 'app_connection_mode';
+  static const String _appSocksPortKey = 'app_socks_port';
 
   /// Secure storage for the VPN password (Windows DPAPI / macOS Keychain)
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -182,16 +187,29 @@ class ConfigService extends ChangeNotifier {
   // fresh by every mutation.
   List<ServerConfig>? _serversCache;
   String _activeIdCache = '';
+  String _connectionModeCache = 'tun';
+  int _socksPortCache = 1080;
 
   List<ServerConfig> get serversCache => _serversCache ?? const [];
   String get activeServerIdCache => _activeIdCache;
+
+  /// Sync snapshots of the app-global connection mode / SOCKS5 port for UI
+  /// that can't await loadConfig (kept fresh by every load/save).
+  String get connectionModeCache => _connectionModeCache;
+  int get socksPortCache => _socksPortCache;
 
   void _refreshServersCache(SharedPreferences prefs) {
     final wasEmpty = _serversCache == null;
     _serversCache = _decodeServers(prefs).map(ServerConfig.fromJson).toList();
     _activeIdCache = prefs.getString(_activeServerKey) ?? '';
+    _refreshConnectionModeCache(prefs);
     // First fill happens lazily from build paths — notify outside build.
     if (wasEmpty) scheduleMicrotask(notifyListeners);
+  }
+
+  void _refreshConnectionModeCache(SharedPreferences prefs) {
+    _connectionModeCache = prefs.getString(_appConnectionModeKey) ?? 'tun';
+    _socksPortCache = prefs.getInt(_appSocksPortKey) ?? 1080;
   }
 
   /// All saved servers (passwords are not loaded — they stay in the keystore).
@@ -367,6 +385,16 @@ class ConfigService extends ChangeNotifier {
     await saveConfig(current.copyWith(logLevel: level));
   }
 
+  Future<void> setGlobalConnectionMode(String mode) async {
+    final current = await loadConfig();
+    await saveConfig(current.copyWith(connectionMode: mode));
+  }
+
+  Future<void> setGlobalSocksPort(int port) async {
+    final current = await loadConfig();
+    await saveConfig(current.copyWith(socksPort: port));
+  }
+
   /// Delete a server entry and its stored password. The last remaining
   /// server cannot be deleted. Deleting the active server switches to the
   /// first remaining one.
@@ -416,6 +444,11 @@ class ConfigService extends ChangeNotifier {
         }
         json['dns'] = prefs.getString(_appDnsKey);
         json['logLevel'] = prefs.getString(_appLogLevelKey);
+        // Connection mode/port are app-global too; stale per-entry copies in
+        // the stored JSON are overridden the same way.
+        _refreshConnectionModeCache(prefs);
+        json['connectionMode'] = _connectionModeCache;
+        json['socksPort'] = _socksPortCache;
 
         // Read the password from secure storage. A keystore hiccup must not
         // nuke the rest of the config (the outer catch would return defaults),
@@ -483,6 +516,8 @@ class ConfigService extends ChangeNotifier {
       // App-global settings live in their own keys, not in server entries.
       await prefs.setString(_appDnsKey, cfg.dns);
       await prefs.setString(_appLogLevelKey, cfg.logLevel);
+      await prefs.setString(_appConnectionModeKey, cfg.connectionMode);
+      await prefs.setInt(_appSocksPortKey, cfg.socksPort);
 
       // Store the password in secure storage, never in SharedPreferences.
       // NEVER clobber a stored password with an empty string: '' means

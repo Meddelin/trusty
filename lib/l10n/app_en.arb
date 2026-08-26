@@ -102,6 +102,15 @@
   "settingsDnsPresetDuplicate": "This DNS server is already in the list",
   "settingsProtocol": "Protocol",
   "settingsLogLevel": "Log Level",
+  "settingsConnectionMode": "Connection mode",
+  "settingsConnectionModeTun": "VPN (TUN)",
+  "settingsConnectionModeSocks": "Proxy (SOCKS5)",
+  "settingsConnectionModeTunHint": "Routes all system traffic through a virtual network adapter (Wintun on Windows). Requires administrator rights.",
+  "settingsConnectionModeSocksHint": "Runs a local SOCKS5 proxy on 127.0.0.1 — no virtual adapter or Wintun needed. Only apps you point at the proxy (or the system proxy settings) go through the VPN.",
+  "settingsConnectionModeLocked": "Disconnect to change the connection mode.",
+  "settingsSocksPort": "SOCKS5 port",
+  "settingsSocksPortHelper": "The proxy listens on 127.0.0.1 only",
+  "settingsSocksPortError": "Enter a port between 1 and 65535",
   "settingsSectionAdvanced": "Advanced",
   "settingsIpv6": "IPv6 Support",
   "settingsSkipVerification": "Skip Certificate Verification",
@@ -120,6 +129,7 @@
     }
   },
   "splitTunnelWarningConnected": "Changes are saved automatically and will apply after the VPN reconnects",
+  "splitTunnelSocksModeBanner": "SOCKS5 proxy mode is active. These rules apply to connections that go through the local proxy; apps not pointed at the proxy bypass the VPN — and these lists — entirely.",
   "splitTunnelVpnMode": "VPN Mode",
   "splitTunnelModeGeneralTitle": "All traffic through VPN",
   "splitTunnelModeGeneralSubtitle": "Exclusions will not go through VPN",
@@ -299,5 +309,13 @@
       }
     }
   },
-  "homeUpdateDownload": "Download"
+  "homeUpdateDownload": "Download",
+  "homeSocksProxy": "SOCKS5 proxy · {address}",
+  "@homeSocksProxy": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  }
 }

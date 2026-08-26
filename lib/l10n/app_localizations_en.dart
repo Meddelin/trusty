@@ -290,6 +290,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsLogLevel => 'Log Level';
 
   @override
+  String get settingsConnectionMode => 'Connection mode';
+
+  @override
+  String get settingsConnectionModeTun => 'VPN (TUN)';
+
+  @override
+  String get settingsConnectionModeSocks => 'Proxy (SOCKS5)';
+
+  @override
+  String get settingsConnectionModeTunHint =>
+      'Routes all system traffic through a virtual network adapter (Wintun on Windows). Requires administrator rights.';
+
+  @override
+  String get settingsConnectionModeSocksHint =>
+      'Runs a local SOCKS5 proxy on 127.0.0.1 — no virtual adapter or Wintun needed. Only apps you point at the proxy (or the system proxy settings) go through the VPN.';
+
+  @override
+  String get settingsConnectionModeLocked =>
+      'Disconnect to change the connection mode.';
+
+  @override
+  String get settingsSocksPort => 'SOCKS5 port';
+
+  @override
+  String get settingsSocksPortHelper => 'The proxy listens on 127.0.0.1 only';
+
+  @override
+  String get settingsSocksPortError => 'Enter a port between 1 and 65535';
+
+  @override
   String get settingsSectionAdvanced => 'Advanced';
 
   @override
@@ -325,6 +355,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get splitTunnelWarningConnected =>
       'Changes are saved automatically and will apply after the VPN reconnects';
+
+  @override
+  String get splitTunnelSocksModeBanner =>
+      'SOCKS5 proxy mode is active. These rules apply to connections that go through the local proxy; apps not pointed at the proxy bypass the VPN — and these lists — entirely.';
 
   @override
   String get splitTunnelVpnMode => 'VPN Mode';
@@ -606,4 +640,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeUpdateDownload => 'Download';
+
+  @override
+  String homeSocksProxy(String address) {
+    return 'SOCKS5 proxy · $address';
+  }
 }
