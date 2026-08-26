@@ -348,6 +348,19 @@ class HomeScreen extends StatelessWidget {
 
     // Errors surface via VpnStatus.error + the error card on this screen.
     await vpnService.connect(config);
+
+    // Soft limit on merged exclusions: warn (never block) when routing
+    // lists inflated the config enough to slow tunnel setup down.
+    final merged = configService.lastMergedExclusionCount;
+    if (context.mounted &&
+        merged > ConfigService.mergedExclusionsSoftLimit) {
+      showAppSnackBar(
+        context,
+        AppLocalizations.of(context)!.splitTunnelExclusionLimitWarning(
+            merged, ConfigService.mergedExclusionsSoftLimit),
+        kind: SnackKind.warning,
+      );
+    }
   }
 }
 

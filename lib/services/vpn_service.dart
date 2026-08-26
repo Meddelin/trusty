@@ -136,6 +136,14 @@ class VpnService extends ChangeNotifier {
       _addLog('📝 Creating configuration file...');
       await _configService.writeConfigFile(config);
 
+      // Oversized exclusion sets slow tunnel setup down — warn, don't block.
+      final merged = _configService.lastMergedExclusionCount;
+      if (merged > ConfigService.mergedExclusionsSoftLimit) {
+        _addLog('⚠️ $merged exclusions after merging routing lists (soft '
+            'limit ${ConfigService.mergedExclusionsSoftLimit}) — connection '
+            'setup may be slow; consider disabling some lists');
+      }
+
       // Pay the deferred Wintun-release cost (if any) right before launching.
       // disconnect() returns instantly and records _adapterBusyUntil; the wait
       // for the adapter to free up is paid here, lazily, and is usually already
