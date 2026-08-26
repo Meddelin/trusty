@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/server_config.dart';
 import '../models/vpn_status.dart';
+import '../utils/log_level.dart';
 import '../utils/windows_short_path.dart';
 import 'config_service.dart';
 
@@ -61,6 +62,10 @@ class VpnService extends ChangeNotifier {
   VpnStatus get status => _status;
   List<String> get logs => List.unmodifiable(_logs);
   String? get errorMessage => _errorMessage;
+
+  /// When the current connection was established (null unless connected).
+  DateTime? get connectedAt => _connectedAt;
+  DateTime? _connectedAt;
 
   /// Add a log observer for real-time log monitoring
   void addLogObserver(void Function(String) observer) {
@@ -276,7 +281,7 @@ class VpnService extends ChangeNotifier {
             }
 
             final isWintunBusy = lastLogs.contains('wintun') &&
-                                 (lastLogs.contains('already') || lastLogs.contains('already'));
+                                 (lastLogs.contains('already') || lastLogs.contains('busy'));
             final isAccessDenied = lastLogs.contains('access is denied') ||
                                    lastLogs.contains('access denied') ||
                                    lastLogs.contains('code 0x5') ||
@@ -344,7 +349,13 @@ class VpnService extends ChangeNotifier {
           }
         });
 
-        _addLog('✅ Connected successfully!');
+        if (outcome.kind == _RaceOutcome.timeout) {
+          // Be honest: nothing confirmed the tunnel, the process is merely
+          // still alive after the timeout.
+          _addLog('ℹ️ No readiness confirmation from the client yet — assuming connected');
+        } else {
+          _addLog('✅ Connected successfully!');
+        }
         _setStatus(VpnStatus.connected);
       } else if (!processExited) {
         throw Exception('Status changed during connection: $_status');
@@ -356,8 +367,11 @@ class VpnService extends ChangeNotifier {
         errorMsg = errorMsg.replaceFirst('Exception:', '').trim();
       }
 
-      _errorMessage = errorMsg;
-      _addLog('❌ Error: $errorMsg');
+      // The exit-code branch may have set a specific, actionable message
+      // ("run as administrator", "Wintun busy") — keep it over the generic
+      // exception text.
+      final message = _errorMessage ?? errorMsg;
+      _addLog('❌ Error: $message');
 
       // Log stack trace for debugging
       if (kDebugMode) {
@@ -368,12 +382,12 @@ class VpnService extends ChangeNotifier {
       if (_process != null) {
         _addLog('🔄 Terminating process after error...');
         await disconnect();
-      } else {
-        // Process already terminated, just update state
-        _setStatus(VpnStatus.disconnected);
       }
 
-      rethrow;
+      // Land in a real error state so the Home screen shows the error card;
+      // disconnect() above resets both status and message, so set them last.
+      _errorMessage = message;
+      _setStatus(VpnStatus.error);
     }
   }
 
@@ -520,6 +534,11 @@ class VpnService extends ChangeNotifier {
 
   /// Format log line based on log level
   String _formatLogLine(String line) {
+    // Known-benign lines tagged ERROR upstream (Wintun's adapter probe)
+    // must not get the red ❌ treatment.
+    if (isBenignCliNoise(line)) {
+      return 'ℹ️ $line';
+    }
     // Check for log level in the line
     if (line.contains(' ERROR ')) {
       return '❌ $line';
@@ -593,6 +612,8 @@ class VpnService extends ChangeNotifier {
   /// Set status and notify listeners
   void _setStatus(VpnStatus newStatus) {
     if (_status != newStatus) {
+      _connectedAt =
+          newStatus == VpnStatus.connected ? DateTime.now() : null;
       _status = newStatus;
       notifyListeners();
     }

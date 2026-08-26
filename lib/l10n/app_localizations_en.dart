@@ -53,6 +53,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navHome => 'Home';
 
   @override
+  String get navServers => 'Servers';
+
+  @override
   String get navSettings => 'Settings';
 
   @override
@@ -62,7 +65,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navLogs => 'Logs';
 
   @override
-  String get navServer => 'Server';
+  String get navServer => 'Deploy';
 
   @override
   String get vpnStatusDisconnected => 'Disconnected';
@@ -206,11 +209,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonSave => 'Save';
 
   @override
+  String get commonRename => 'Rename';
+
+  @override
+  String get settingsServerName => 'Server name (optional)';
+
+  @override
+  String get settingsDnsHelper =>
+      'One or more upstreams, comma-separated: IP, tls:// (DoT), https:// (DoH), quic:// (DoQ)';
+
+  @override
+  String get settingsPrefixHelper =>
+      'Only for servers with connection filtering: exact hex prefix[/mask] from the server\'s rules.toml';
+
+  @override
   String get commonDelete => 'Delete';
 
   @override
   String get settingsWarningConnected =>
-      'Disconnect from VPN before changing settings';
+      'Server settings are locked while connected. Application settings can be changed anytime and apply on the next connect.';
 
   @override
   String get settingsSectionServer => 'Server';
@@ -297,7 +314,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitTunnelWarningConnected =>
-      'Disconnect from VPN before changing settings';
+      'Changes are saved automatically and will apply after the VPN reconnects';
 
   @override
   String get splitTunnelVpnMode => 'VPN Mode';

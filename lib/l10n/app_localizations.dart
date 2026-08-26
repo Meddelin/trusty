@@ -178,6 +178,12 @@ abstract class AppLocalizations {
   /// **'Home'**
   String get navHome;
 
+  /// No description provided for @navServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Servers'**
+  String get navServers;
+
   /// No description provided for @navSettings.
   ///
   /// In en, this message translates to:
@@ -199,7 +205,7 @@ abstract class AppLocalizations {
   /// No description provided for @navServer.
   ///
   /// In en, this message translates to:
-  /// **'Server'**
+  /// **'Deploy'**
   String get navServer;
 
   /// No description provided for @vpnStatusDisconnected.
@@ -460,6 +466,30 @@ abstract class AppLocalizations {
   /// **'Save'**
   String get commonSave;
 
+  /// No description provided for @commonRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get commonRename;
+
+  /// No description provided for @settingsServerName.
+  ///
+  /// In en, this message translates to:
+  /// **'Server name (optional)'**
+  String get settingsServerName;
+
+  /// No description provided for @settingsDnsHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'One or more upstreams, comma-separated: IP, tls:// (DoT), https:// (DoH), quic:// (DoQ)'**
+  String get settingsDnsHelper;
+
+  /// No description provided for @settingsPrefixHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Only for servers with connection filtering: exact hex prefix[/mask] from the server\'s rules.toml'**
+  String get settingsPrefixHelper;
+
   /// No description provided for @commonDelete.
   ///
   /// In en, this message translates to:
@@ -469,7 +499,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsWarningConnected.
   ///
   /// In en, this message translates to:
-  /// **'Disconnect from VPN before changing settings'**
+  /// **'Server settings are locked while connected. Application settings can be changed anytime and apply on the next connect.'**
   String get settingsWarningConnected;
 
   /// No description provided for @settingsSectionServer.
@@ -637,7 +667,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitTunnelWarningConnected.
   ///
   /// In en, this message translates to:
-  /// **'Disconnect from VPN before changing settings'**
+  /// **'Changes are saved automatically and will apply after the VPN reconnects'**
   String get splitTunnelWarningConnected;
 
   /// No description provided for @splitTunnelVpnMode.

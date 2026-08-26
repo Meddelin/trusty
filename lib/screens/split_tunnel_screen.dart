@@ -1,15 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_selector/file_selector.dart';
+import '../models/routing_list.dart';
 import '../models/server_config.dart';
 import '../models/domain_group.dart';
 import '../models/vpn_status.dart';
 import '../services/config_service.dart';
 import '../services/vpn_service.dart';
 import '../services/domain_discovery_service.dart';
+import '../utils/app_snackbar.dart';
 import '../utils/exclusion_parser.dart';
+import '../widgets/info_banner.dart';
 import '../l10n/app_localizations.dart';
 
 class SplitTunnelScreen extends StatefulWidget {
@@ -29,7 +34,12 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
   List<String> _apps = [];
   bool _isLoading = true;
 
+  // Ready-made routing lists (built-in preset + user URL/file lists)
+  List<RoutingList> _routingLists = [];
+  final Set<String> _busyLists = {};
+
   final TextEditingController _domainController = TextEditingController();
+  final TextEditingController _appSearchController = TextEditingController();
   List<InstalledApp> _installedApps = [];
   bool _isLoadingApps = false;
   // Whether app discovery has already run (Fix #2: lazy + cached).
@@ -68,6 +78,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _domainController.dispose();
+    _appSearchController.dispose();
     _logDebounceTimer?.cancel();
     _stopLogMonitoring();
     super.dispose();
@@ -80,11 +91,15 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     // Migrate and load domain groups
     final groupsData = await configService.migrateFlatDomainsToGroups();
 
+    final routingLists = await configService.loadRoutingLists();
+    if (!mounted) return;
+
     setState(() {
       _vpnMode = config.vpnMode;
       _groups = List.from(groupsData.groups);
       _standaloneDomains = List.from(groupsData.standaloneDomains);
       _apps = List.from(config.splitTunnelApps);
+      _routingLists = routingLists;
       _isLoading = false;
     });
 
@@ -108,7 +123,10 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
   /// running a regex + Set rebuild synchronously on every single line.
   void _onLogLine(String line) {
     _pendingLogLines.add(line);
-    _logDebounceTimer ??= Timer(const Duration(milliseconds: 500), _flushLogLines);
+    _logDebounceTimer ??= Timer(
+      const Duration(milliseconds: 500),
+      _flushLogLines,
+    );
   }
 
   void _flushLogLines() {
@@ -209,70 +227,95 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       await configService.saveConfig(updatedConfig);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.splitTunnelSaveError(e.toString())),
-            backgroundColor: Colors.red,
-          ),
+        showAppSnackBar(
+          context,
+          AppLocalizations.of(context)!.splitTunnelSaveError(e.toString()),
+          kind: SnackKind.error,
         );
       }
     }
   }
 
-  /// Add domain with discovery flow
-  Future<void> _addDomainWithDiscovery() async {
-    final domain = _domainController.text.trim();
-    if (domain.isEmpty) return;
+  /// Add whatever is in the input — a site (bare domain or a pasted URL),
+  /// an IP or a CIDR range. The entry is normalized, validated and lands in
+  /// the list immediately; for plain domains a snackbar offers the
+  /// related-domains discovery as an optional follow-up instead of forcing
+  /// a blocking dialog on every add.
+  void _addEntry() {
+    final raw = _domainController.text;
+    if (raw.trim().isEmpty) return;
 
-    // Check if domain already exists
-    if (_getAllCurrentDomains().contains(domain.toLowerCase())) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.splitTunnelDomainAlreadyAdded)),
-        );
-      }
+    final entry = normalizeExclusion(raw);
+    if (entry == null) {
+      showAppSnackBar(
+        context,
+        'Not a valid domain, IP or CIDR: "${raw.trim()}"',
+        kind: SnackKind.error,
+      );
       return;
     }
 
-    // Check if it looks like a domain (not IP or CIDR)
-    final isDomain = !RegExp(r'^\d+\.\d+\.\d+\.\d+').hasMatch(domain) &&
-        !domain.contains('/');
-
-    if (!isDomain) {
-      // IPs and CIDRs go straight to standalone
-      setState(() {
-        _standaloneDomains.add(domain);
-      });
-      _domainController.clear();
-      _saveConfig();
+    if (_getAllCurrentDomains().contains(entry)) {
+      showAppSnackBar(
+        context,
+        AppLocalizations.of(context)!.splitTunnelDomainAlreadyAdded,
+      );
       return;
     }
-
-    // Show discovery dialog
-    if (!mounted) return;
-    _domainController.clear();
-
-    final result = await showDialog<_DiscoveryDialogResult>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _DiscoveryDialog(
-        domain: domain,
-        discoveryService: _discoveryService,
-      ),
-    );
-
-    if (result == null) return; // Cancelled
 
     setState(() {
-      if (result.createGroup && result.selectedDomains.isNotEmpty) {
-        _groups.add(DomainGroup(
-          id: '${domain.replaceAll('.', '-')}-${DateTime.now().millisecondsSinceEpoch}',
-          name: result.groupName,
-          primaryDomain: domain,
-          domains: [domain, ...result.selectedDomains],
-        ));
+      _standaloneDomains.add(entry);
+    });
+    _domainController.clear();
+    _saveConfig();
+
+    // Discovery only makes sense for real domains (not IPs/CIDRs/wildcards).
+    if (classifyExclusion(entry) == ExclusionKind.domain &&
+        !entry.startsWith('*.')) {
+      showAppSnackBar(
+        context,
+        'Added $entry',
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Find related',
+          onPressed: () => _runDiscoveryFor(entry),
+        ),
+      );
+    }
+  }
+
+  /// Optional related-domain discovery. When the user picks related domains,
+  /// the standalone entry is upgraded to a group.
+  Future<void> _runDiscoveryFor(String domain) async {
+    final result = await showDialog<_DiscoveryDialogResult>(
+      context: context,
+      builder: (context) =>
+          _DiscoveryDialog(domain: domain, discoveryService: _discoveryService),
+    );
+    if (result == null) return;
+
+    final existing = _getAllCurrentDomains()..remove(domain);
+    final related = result.selectedDomains
+        .map((d) => d.toLowerCase())
+        .where((d) => d != domain && !existing.contains(d))
+        .toList();
+    if (related.isEmpty) return;
+
+    setState(() {
+      if (result.createGroup) {
+        _standaloneDomains.remove(domain);
+        _groups.add(
+          DomainGroup(
+            id: '${domain.replaceAll('.', '-')}-${DateTime.now().millisecondsSinceEpoch}',
+            name: result.groupName,
+            primaryDomain: domain,
+            domains: [domain, ...related],
+          ),
+        );
       } else {
-        _standaloneDomains.add(domain);
+        // "Without group": the checked related domains still get added,
+        // just as standalone entries.
+        _standaloneDomains.addAll(related);
       }
     });
     _saveConfig();
@@ -326,14 +369,25 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     if (raw == null) return;
 
     final existing = _getAllCurrentDomains();
-    final toAdd = parseExclusionList(raw)
-        .where((d) => !existing.contains(d.toLowerCase()))
-        .toList();
+    final toAdd = <String>[];
+    var invalid = 0;
+    for (final token in parseExclusionList(raw)) {
+      final entry = normalizeExclusion(token);
+      if (entry == null) {
+        invalid++;
+      } else if (!existing.contains(entry) && !toAdd.contains(entry)) {
+        toAdd.add(entry);
+      }
+    }
 
     if (toAdd.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nothing new to add')),
+        showAppSnackBar(
+          context,
+          invalid > 0
+              ? 'Nothing new to add ($invalid invalid entries skipped)'
+              : 'Nothing new to add',
+          kind: invalid > 0 ? SnackKind.warning : SnackKind.info,
         );
       }
       return;
@@ -345,8 +399,12 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     _saveConfig();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Added ${toAdd.length} entries')),
+      showAppSnackBar(
+        context,
+        invalid > 0
+            ? 'Added ${toAdd.length} entries ($invalid invalid skipped)'
+            : 'Added ${toAdd.length} entries',
+        kind: invalid > 0 ? SnackKind.warning : SnackKind.success,
       );
     }
   }
@@ -356,7 +414,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.splitTunnelAddToGroup(group.name)),
+        title: Text(
+          AppLocalizations.of(context)!.splitTunnelAddToGroup(group.name),
+        ),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -380,16 +440,33 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     );
     controller.dispose();
 
-    if (result != null && result.isNotEmpty) {
-      final idx = _groups.indexWhere((g) => g.id == group.id);
-      if (idx != -1 && !_groups[idx].domains.contains(result)) {
-        setState(() {
-          final updated = List<String>.from(_groups[idx].domains)..add(result);
-          _groups[idx] = _groups[idx].copyWith(domains: updated);
-        });
-        _saveConfig();
-      }
+    if (result == null || result.isEmpty || !mounted) return;
+
+    final entry = normalizeExclusion(result);
+    if (entry == null) {
+      showAppSnackBar(
+        context,
+        'Not a valid domain, IP or CIDR: "$result"',
+        kind: SnackKind.error,
+      );
+      return;
     }
+    // Dedupe across ALL containers, not just this group.
+    if (_getAllCurrentDomains().contains(entry)) {
+      showAppSnackBar(
+        context,
+        AppLocalizations.of(context)!.splitTunnelDomainAlreadyAdded,
+      );
+      return;
+    }
+
+    final idx = _groups.indexWhere((g) => g.id == group.id);
+    if (idx == -1) return;
+    setState(() {
+      final updated = List<String>.from(_groups[idx].domains)..add(entry);
+      _groups[idx] = _groups[idx].copyWith(domains: updated);
+    });
+    _saveConfig();
   }
 
   void _removeDomainFromGroup(DomainGroup group, String domain) {
@@ -423,7 +500,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: InputDecoration(hintText: AppLocalizations.of(context)!.splitTunnelGroupName),
+          decoration: InputDecoration(
+            hintText: AppLocalizations.of(context)!.splitTunnelGroupName,
+          ),
           onSubmitted: (value) => Navigator.pop(context, value.trim()),
         ),
         actions: [
@@ -484,6 +563,54 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     });
   }
 
+  /// Real app icon when discovery extracted one, generic icon otherwise.
+  Widget _appIcon(InstalledApp app) {
+    if (app.iconPath.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.file(
+          File(app.iconPath),
+          width: 26,
+          height: 26,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (_, e, s) => const Icon(Icons.apps, size: 20),
+        ),
+      );
+    }
+    return Icon(
+      app.running ? Icons.play_circle_outline : Icons.apps,
+      size: 20,
+    );
+  }
+
+  /// The process name the current search query would add.
+  /// ponytail: on Windows a bare name gets ".exe" appended — that's what the
+  /// client's process filter matches; macOS process names are used as-is.
+  String _manualAppName() {
+    var name = _appSearchQuery.trim();
+    if (Platform.isWindows && name.isNotEmpty && !name.contains('.')) {
+      name = '$name.exe';
+    }
+    return name;
+  }
+
+  /// Add an app by process name — for apps the scanner didn't find
+  /// (portable builds, games, custom install dirs).
+  void _addManualApp() {
+    final name = _manualAppName();
+    if (name.isEmpty) return;
+    if (_apps.any((a) => a.toLowerCase() == name.toLowerCase())) {
+      showAppSnackBar(context, '"$name" is already in the list');
+      return;
+    }
+    setState(() {
+      _apps.add(name);
+      _appSearchQuery = '';
+    });
+    _appSearchController.clear();
+    _saveConfig();
+  }
+
   void _toggleApp(String appName) {
     setState(() {
       if (_apps.contains(appName)) {
@@ -515,70 +642,71 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
 
         return Column(
           children: [
-            Expanded(
-              flex: 0,
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    if (isConnected)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.warning_amber, color: Colors.orange, size: 20),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                AppLocalizations.of(context)!.splitTunnelWarningConnected,
-                                style: TextStyle(color: Colors.orange, fontSize: 13),
+            // Everything stays editable while connected — changes are saved
+            // immediately and picked up on the next connect. The banner just
+            // says so instead of locking the whole screen.
+            if (isConnected)
+              InfoBanner(
+                severity: BannerSeverity.info,
+                message: AppLocalizations.of(
+                  context,
+                )!.splitTunnelWarningConnected,
+                margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              ),
+            Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<VpnMode>(
+                          showSelectedIcon: false,
+                          segments: [
+                            ButtonSegment(
+                              value: VpnMode.general,
+                              icon: const Icon(Icons.shield, size: 18),
+                              label: Text(
+                                AppLocalizations.of(
+                                  context,
+                                )!.splitTunnelModeGeneralTitle,
+                              ),
+                            ),
+                            ButtonSegment(
+                              value: VpnMode.selective,
+                              icon: const Icon(Icons.filter_alt, size: 18),
+                              label: Text(
+                                AppLocalizations.of(
+                                  context,
+                                )!.splitTunnelModeSelectiveTitle,
                               ),
                             ),
                           ],
+                          selected: {_vpnMode},
+                          onSelectionChanged: (modes) =>
+                              _setVpnMode(modes.first),
                         ),
                       ),
-                    Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            AppLocalizations.of(context)!.splitTunnelVpnMode,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
-                          SizedBox(height: 8),
-                          _buildModeCard(
-                            title: AppLocalizations.of(context)!.splitTunnelModeGeneralTitle,
-                            subtitle: AppLocalizations.of(context)!.splitTunnelModeGeneralSubtitle,
-                            icon: Icons.shield,
-                            isSelected: _vpnMode == VpnMode.general,
-                            enabled: !isConnected,
-                            onTap: () {
-                              if (!isConnected) _setVpnMode(VpnMode.general);
-                            },
-                          ),
-                          SizedBox(height: 8),
-                          _buildModeCard(
-                            title: AppLocalizations.of(context)!.splitTunnelModeSelectiveTitle,
-                            subtitle: AppLocalizations.of(context)!.splitTunnelModeSelectiveSubtitle,
-                            icon: Icons.filter_alt,
-                            isSelected: _vpnMode == VpnMode.selective,
-                            enabled: !isConnected,
-                            onTap: () {
-                              if (!isConnected) _setVpnMode(VpnMode.selective);
-                            },
-                          ),
-                        ],
+                      SizedBox(height: 6),
+                      Text(
+                        _vpnMode == VpnMode.general
+                            ? AppLocalizations.of(
+                                context,
+                              )!.splitTunnelModeGeneralSubtitle
+                            : AppLocalizations.of(
+                                context,
+                              )!.splitTunnelModeSelectiveSubtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                       ),
-                    ),
-                  ],
+                      SizedBox(height: 10),
+                      _buildRoutingListsSection(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -587,21 +715,22 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
               tabs: [
                 Tab(
                   icon: Icon(Icons.language, size: 20),
-                  text: AppLocalizations.of(context)!.splitTunnelDomainsTab(_totalDomainCount),
+                  text: AppLocalizations.of(
+                    context,
+                  )!.splitTunnelDomainsTab(_totalDomainCount),
                 ),
                 Tab(
                   icon: Icon(Icons.apps, size: 20),
-                  text: AppLocalizations.of(context)!.splitTunnelAppsTab(_apps.length),
+                  text: AppLocalizations.of(
+                    context,
+                  )!.splitTunnelAppsTab(_apps.length),
                 ),
               ],
             ),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildDomainsTab(isConnected),
-                  _buildAppsTab(isConnected),
-                ],
+                children: [_buildDomainsTab(), _buildAppsTab()],
               ),
             ),
             Container(
@@ -630,184 +759,388 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
     );
   }
 
-  Widget _buildModeCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required bool isSelected,
-    required bool enabled,
-    required VoidCallback onTap,
-  }) {
+  // ── Ready-made routing lists ──────────────────────────────────────────
+
+  Future<void> _reloadRoutingLists() async {
+    final lists = await context.read<ConfigService>().loadRoutingLists();
+    if (mounted) setState(() => _routingLists = lists);
+  }
+
+  /// One tile per list (built-in preset + user lists) with enable switch,
+  /// refresh, per-mode applicability and delete. Entries are merged into
+  /// the exclusions at connect time; they never clutter the domain list.
+  Widget _buildRoutingListsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Ready-made routing lists',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: _addRoutingList,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add list'),
+            ),
+          ],
+        ),
+        // Cap the section height so many lists scroll here instead of
+        // squeezing the domains/apps tabs out of the screen.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 236),
+          child: ListView(
+            shrinkWrap: true,
+            children: _routingLists.map(_buildRoutingListTile).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRoutingListTile(RoutingList list) {
     final theme = Theme.of(context);
-    final color = isSelected ? theme.colorScheme.primary : theme.colorScheme.outline;
+    final busy = _busyLists.contains(list.id);
+    final activeInMode = list.enabled && list.matchesMode(_vpnMode);
+    final hasError = list.lastError.isNotEmpty;
+
+    final parts = <String>[];
+    if (list.entryCount > 0) {
+      parts.add('${list.entryCount} entries');
+      if (list.lastUpdated != null) {
+        parts.add(
+          'updated ${MaterialLocalizations.of(context).formatShortDate(list.lastUpdated!)}',
+        );
+      }
+    } else {
+      parts.add(
+        list.isBuiltin
+            ? 'Downloads on first enable · itdoginfo/allow-domains'
+            : 'Not downloaded yet',
+      );
+    }
+    if (hasError) parts.add('update failed');
+    if (list.enabled && !list.matchesMode(_vpnMode)) {
+      parts.add('inactive in ${_vpnMode.name} mode (set to ${list.appliesTo})');
+    }
 
     return Card(
-      elevation: isSelected ? 2 : 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outline.withValues(alpha: 0.3),
-          width: isSelected ? 2 : 1,
-        ),
-      ),
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: enabled ? null : theme.disabledColor,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: enabled ? theme.textTheme.bodySmall?.color : theme.disabledColor,
-                      ),
-                    ),
-                  ],
-                ),
+      margin: const EdgeInsets.only(top: 8),
+      child: ListTile(
+        contentPadding: const EdgeInsets.only(left: 16, right: 8),
+        leading: busy
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                hasError
+                    ? Icons.sync_problem
+                    : list.type == 'file'
+                    ? Icons.description_outlined
+                    : Icons.alt_route,
+                color: hasError
+                    ? theme.colorScheme.error
+                    : activeInMode
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outline,
               ),
-              if (isSelected)
-                Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 24),
-            ],
-          ),
+        title: Text(list.name),
+        subtitle: Text(
+          parts.join(' · '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: hasError ? TextStyle(color: theme.colorScheme.error) : null,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (list.enabled)
+              IconButton(
+                tooltip: 'Update now',
+                icon: const Icon(Icons.refresh, size: 20),
+                onPressed: busy ? null : () => _refreshRoutingList(list),
+              ),
+            PopupMenuButton<String>(
+              tooltip: 'List options',
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  enabled: false,
+                  child: Text('Apply this list in:'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'selective',
+                  checked: list.appliesTo == 'selective',
+                  child: const Text('Selective mode (route via VPN)'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'general',
+                  checked: list.appliesTo == 'general',
+                  child: const Text('General mode (bypass VPN)'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'both',
+                  checked: list.appliesTo == 'both',
+                  child: const Text('Both modes'),
+                ),
+                if (!list.isBuiltin) ...[
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete list'),
+                  ),
+                ],
+              ],
+              onSelected: (v) async {
+                if (_busyLists.contains(list.id)) {
+                  showAppSnackBar(
+                      context, 'Wait for the running update to finish');
+                  return;
+                }
+                final configService = context.read<ConfigService>();
+                if (v == 'delete') {
+                  await configService.deleteRoutingList(list.id);
+                } else {
+                  await configService.setRoutingListAppliesTo(list.id, v);
+                }
+                await _reloadRoutingLists();
+              },
+            ),
+            Switch(
+              value: list.enabled,
+              onChanged: busy ? null : (v) => _toggleRoutingList(list, v),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildDomainsTab(bool isConnected) {
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _vpnMode == VpnMode.general
-                ? AppLocalizations.of(context)!.splitTunnelDomainsExclude
-                : AppLocalizations.of(context)!.splitTunnelDomainsInclude,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          SizedBox(height: 4),
-          Text(
-            AppLocalizations.of(context)!.splitTunnelDomainsHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+  Future<void> _toggleRoutingList(RoutingList list, bool enable) async {
+    final configService = context.read<ConfigService>();
+
+    // First enable of a never-downloaded list → fetch before flipping.
+    if (enable && list.entryCount == 0) {
+      setState(() => _busyLists.add(list.id));
+      try {
+        await configService.refreshRoutingList(list.id);
+      } catch (e) {
+        if (mounted) {
+          setState(() => _busyLists.remove(list.id));
+          showAppSnackBar(
+            context,
+            'Failed to download "${list.name}": $e',
+            kind: SnackKind.error,
+          );
+        }
+        return;
+      }
+      if (mounted) setState(() => _busyLists.remove(list.id));
+    }
+
+    await configService.setRoutingListEnabled(list.id, enable);
+    await _reloadRoutingLists();
+  }
+
+  Future<void> _refreshRoutingList(RoutingList list) async {
+    final configService = context.read<ConfigService>();
+    setState(() => _busyLists.add(list.id));
+    try {
+      await configService.refreshRoutingList(list.id);
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          '"${list.name}" updated',
+          kind: SnackKind.success,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          'Failed to update "${list.name}": $e',
+          kind: SnackKind.error,
+        );
+      }
+    }
+    if (mounted) setState(() => _busyLists.remove(list.id));
+    await _reloadRoutingLists();
+  }
+
+  Future<void> _addRoutingList() async {
+    final added = await showDialog<RoutingList>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) =>
+          _AddRoutingListDialog(configService: context.read<ConfigService>()),
+    );
+    if (!mounted) return;
+    if (added != null) {
+      showAppSnackBar(
+        context,
+        '"${added.name}" added (${added.entryCount} entries)',
+        kind: SnackKind.success,
+      );
+    }
+    // Reload unconditionally: an interrupted _add() may have persisted the
+    // list even though the dialog returned null.
+    await _reloadRoutingLists();
+  }
+
+  Widget _buildDomainsTab() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _vpnMode == VpnMode.general
+                    ? AppLocalizations.of(context)!.splitTunnelDomainsExclude
+                    : AppLocalizations.of(context)!.splitTunnelDomainsInclude,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              SizedBox(height: 4),
+              Text(
+                AppLocalizations.of(context)!.splitTunnelDomainsHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.outline,
                 ),
-          ),
-          const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 12),
 
-          // Add domain input
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _domainController,
-                  enabled: !isConnected,
-                  decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.splitTunnelDomainsInputHint,
-                    prefixIcon: const Icon(Icons.add_link, size: 20),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+              // Add domain input
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _domainController,
+                      decoration: InputDecoration(
+                        hintText: AppLocalizations.of(
+                          context,
+                        )!.splitTunnelDomainsInputHint,
+                        prefixIcon: const Icon(Icons.add_link, size: 20),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onSubmitted: (_) => _addEntry(),
                     ),
                   ),
-                  onSubmitted: (_) => _addDomainWithDiscovery(),
-                ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: _addEntry,
+                    icon: const Icon(Icons.add),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.outlined(
+                    onPressed: _importDomainList,
+                    tooltip: 'Paste a list',
+                    icon: const Icon(Icons.content_paste),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              IconButton.filled(
-                onPressed: isConnected ? null : _addDomainWithDiscovery,
-                icon: const Icon(Icons.add),
-              ),
-              const SizedBox(width: 8),
-              IconButton.outlined(
-                onPressed: isConnected ? null : _importDomainList,
-                tooltip: 'Paste a list',
-                icon: const Icon(Icons.content_paste),
+              const SizedBox(height: 12),
+
+              // Domain groups and standalone list
+              Expanded(
+                child:
+                    (_groups.isEmpty &&
+                        _standaloneDomains.isEmpty &&
+                        _suggestions.isEmpty)
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.dns_outlined,
+                              size: 48,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              AppLocalizations.of(
+                                context,
+                              )!.splitTunnelNoDomains,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outline,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView(
+                        children: [
+                          // Domain groups
+                          ..._groups.map(_buildGroupCard),
+
+                          // Standalone domains
+                          if (_standaloneDomains.isNotEmpty) ...[
+                            if (_groups.isNotEmpty)
+                              Padding(
+                                padding: EdgeInsets.only(top: 12, bottom: 4),
+                                child: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.splitTunnelOther,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.outline,
+                                      ),
+                                ),
+                              ),
+                            ..._standaloneDomains.map(
+                              (domain) => Card(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                child: ListTile(
+                                  dense: true,
+                                  leading: Icon(
+                                    _getDomainIcon(domain),
+                                    size: 20,
+                                  ),
+                                  title: Text(domain),
+                                  trailing: IconButton(
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 20,
+                                    ),
+                                    onPressed: () =>
+                                        _removeStandaloneDomain(domain),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+
+                          // Suggestions from log monitoring
+                          if (_suggestions.isNotEmpty) _buildSuggestionBanner(),
+                        ],
+                      ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-
-          // Domain groups and standalone list
-          Expanded(
-            child: (_groups.isEmpty && _standaloneDomains.isEmpty && _suggestions.isEmpty)
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.dns_outlined,
-                          size: 48,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          AppLocalizations.of(context)!.splitTunnelNoDomains,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView(
-                    children: [
-                      // Domain groups
-                      ..._groups.map((group) => _buildGroupCard(group, isConnected)),
-
-                      // Standalone domains
-                      if (_standaloneDomains.isNotEmpty) ...[
-                        if (_groups.isNotEmpty)
-                          Padding(
-                            padding: EdgeInsets.only(top: 12, bottom: 4),
-                            child: Text(
-                              AppLocalizations.of(context)!.splitTunnelOther,
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.outline,
-                                  ),
-                            ),
-                          ),
-                        ..._standaloneDomains.map((domain) => Card(
-                              margin: const EdgeInsets.only(bottom: 4),
-                              child: ListTile(
-                                dense: true,
-                                leading: Icon(_getDomainIcon(domain), size: 20),
-                                title: Text(domain),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete_outline, size: 20),
-                                  onPressed: isConnected ? null : () => _removeStandaloneDomain(domain),
-                                ),
-                              ),
-                            )),
-                      ],
-
-                      // Suggestions from log monitoring
-                      if (_suggestions.isNotEmpty)
-                        _buildSuggestionBanner(isConnected),
-                    ],
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildGroupCard(DomainGroup group, bool isConnected) {
+  Widget _buildGroupCard(DomainGroup group) {
     final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -821,7 +1154,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
         leading: Icon(Icons.folder_outlined, color: theme.colorScheme.primary),
         title: Text(
           group.name,
-          style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
         subtitle: Text(
           _pluralDomains(group.domains.length),
@@ -829,36 +1164,45 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
         ),
         children: [
           // Domains in group
-          ...group.domains.map((domain) => ListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.only(left: 72, right: 16),
-                leading: Icon(_getDomainIcon(domain), size: 18),
-                title: Text(domain, style: const TextStyle(fontSize: 13)),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: isConnected ? null : () => _removeDomainFromGroup(group, domain),
-                ),
-              )),
+          ...group.domains.map(
+            (domain) => ListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.only(left: 72, right: 16),
+              leading: Icon(_getDomainIcon(domain), size: 18),
+              title: Text(domain, style: const TextStyle(fontSize: 13)),
+              trailing: IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => _removeDomainFromGroup(group, domain),
+              ),
+            ),
+          ),
           // Actions
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
                 TextButton.icon(
-                  onPressed: isConnected ? null : () => _addDomainToGroup(group),
+                  onPressed: () => _addDomainToGroup(group),
                   icon: Icon(Icons.add, size: 18),
                   label: Text(AppLocalizations.of(context)!.commonAdd),
                 ),
                 const Spacer(),
                 TextButton.icon(
-                  onPressed: isConnected ? null : () => _renameGroup(group),
+                  onPressed: () => _renameGroup(group),
                   icon: Icon(Icons.edit, size: 18),
-                  label: Text(AppLocalizations.of(context)!.commonSave),
+                  label: Text(AppLocalizations.of(context)!.commonRename),
                 ),
                 TextButton.icon(
-                  onPressed: isConnected ? null : () => _confirmDeleteGroup(group),
-                  icon: Icon(Icons.delete_outline, size: 18, color: theme.colorScheme.error),
-                  label: Text(AppLocalizations.of(context)!.commonDelete, style: TextStyle(color: theme.colorScheme.error)),
+                  onPressed: () => _confirmDeleteGroup(group),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: theme.colorScheme.error,
+                  ),
+                  label: Text(
+                    AppLocalizations.of(context)!.commonDelete,
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
                 ),
               ],
             ),
@@ -873,7 +1217,11 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: Text(AppLocalizations.of(context)!.splitTunnelDeleteGroupTitle),
-        content: Text(AppLocalizations.of(context)!.splitTunnelDeleteGroupMessage(group.name)),
+        content: Text(
+          AppLocalizations.of(
+            context,
+          )!.splitTunnelDeleteGroupMessage(group.name),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -884,14 +1232,17 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
               Navigator.pop(context);
               _deleteGroup(group);
             },
-            child: Text(AppLocalizations.of(context)!.commonDelete, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            child: Text(
+              AppLocalizations.of(context)!.commonDelete,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSuggestionBanner(bool isConnected) {
+  Widget _buildSuggestionBanner() {
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(12),
@@ -910,9 +1261,9 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
               Text(
                 'Domains discovered in logs',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Colors.blue,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: Colors.blue,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Spacer(),
               TextButton(
@@ -922,40 +1273,51 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
             ],
           ),
           const SizedBox(height: 8),
-          ..._suggestions.map((domain) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(domain, style: TextStyle(fontSize: 13)),
+          ..._suggestions.map(
+            (domain) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text(domain, style: TextStyle(fontSize: 13))),
+                  if (_groups.isNotEmpty)
+                    PopupMenuButton<DomainGroup>(
+                      tooltip: AppLocalizations.of(
+                        context,
+                      )!.splitTunnelSuggestionAddToGroup,
+                      icon: Icon(Icons.playlist_add, size: 18),
+                      itemBuilder: (context) => _groups
+                          .map(
+                            (g) => PopupMenuItem(
+                              value: g,
+                              child: Text(
+                                AppLocalizations.of(
+                                  context,
+                                )!.splitTunnelToGroup(g.name),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onSelected: (group) =>
+                          _addSuggestionToGroup(domain, group),
                     ),
-                    if (!isConnected) ...[
-                      if (_groups.isNotEmpty)
-                        PopupMenuButton<DomainGroup>(
-                          tooltip: AppLocalizations.of(context)!.splitTunnelSuggestionAddToGroup,
-                          icon: Icon(Icons.playlist_add, size: 18),
-                          itemBuilder: (context) => _groups
-                              .map((g) => PopupMenuItem(
-                                    value: g,
-                                    child: Text(AppLocalizations.of(context)!.splitTunnelToGroup(g.name)),
-                                  ))
-                              .toList(),
-                          onSelected: (group) => _addSuggestionToGroup(domain, group),
-                        ),
-                      IconButton(
-                        icon: Icon(Icons.add_circle_outline, size: 18),
-                        tooltip: AppLocalizations.of(context)!.splitTunnelSuggestionAddStandalone,
-                        onPressed: () => _addSuggestionToStandalone(domain),
-                      ),
-                    ],
-                    IconButton(
-                      icon: Icon(Icons.close, size: 18),
-                      tooltip: AppLocalizations.of(context)!.splitTunnelSuggestionHide,
-                      onPressed: () => _dismissSuggestion(domain),
-                    ),
-                  ],
-                ),
-              )),
+                  IconButton(
+                    icon: Icon(Icons.add_circle_outline, size: 18),
+                    tooltip: AppLocalizations.of(
+                      context,
+                    )!.splitTunnelSuggestionAddStandalone,
+                    onPressed: () => _addSuggestionToStandalone(domain),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, size: 18),
+                    tooltip: AppLocalizations.of(
+                      context,
+                    )!.splitTunnelSuggestionHide,
+                    onPressed: () => _dismissSuggestion(domain),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -966,57 +1328,125 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
   }
 
   IconData _getDomainIcon(String domain) {
-    if (domain.contains('/')) {
-      return Icons.hub; // CIDR
-    } else if (RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(domain)) {
-      return Icons.router; // IP
-    } else {
-      return Icons.language; // Domain
+    switch (classifyExclusion(domain)) {
+      case ExclusionKind.cidr:
+        return Icons.hub;
+      case ExclusionKind.ip:
+        return Icons.router;
+      case ExclusionKind.domain:
+      case ExclusionKind.invalid:
+        return Icons.language;
     }
   }
 
-  Widget _buildAppsTab(bool isConnected) {
-    final filteredApps = _appSearchQuery.isEmpty
-        ? _installedApps
-        : _installedApps.where((app) {
-            final query = _appSearchQuery.toLowerCase();
-            return app.name.toLowerCase().contains(query) ||
-                app.displayName.toLowerCase().contains(query);
-          }).toList();
+  Widget _buildAppsTab() {
+    final query = _appSearchQuery.trim().toLowerCase();
+    // Space-insensitive match, so "whatsapp" finds "Whats App Desktop" and
+    // "apple music" finds "AppleMusic.exe".
+    final compactQuery = query.replaceAll(' ', '');
+    bool matches(String s) {
+      if (query.isEmpty) return true;
+      final l = s.toLowerCase();
+      return l.contains(query) || l.replaceAll(' ', '').contains(compactQuery);
+    }
 
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _vpnMode == VpnMode.general
-                ? AppLocalizations.of(context)!.splitTunnelAppsExclude
-                : AppLocalizations.of(context)!.splitTunnelAppsInclude,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          SizedBox(height: 12),
-          TextField(
-            enabled: !isConnected,
-            decoration: InputDecoration(
-              hintText: AppLocalizations.of(context)!.splitTunnelSearchApps,
-              prefixIcon: const Icon(Icons.search, size: 20),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+    // Selected apps the scanner didn't find (added manually, custom install
+    // dirs, or picked on another machine) — must stay visible and removable,
+    // never silently filtered out.
+    final knownNames = _installedApps.map((a) => a.name.toLowerCase()).toSet();
+    final manualApps =
+        _apps
+            .where((a) => !knownNames.contains(a.toLowerCase()))
+            .where(matches)
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    final filteredApps =
+        _installedApps
+            .where((app) {
+              // Running processes are search-only: the default view shows
+              // the clean Installed-Apps list (selected ones always stay).
+              if (app.running && query.isEmpty && !_apps.contains(app.name)) {
+                return false;
+              }
+              return matches(app.name) || matches(app.displayName);
+            })
+            .toList()
+          // Selected first, so what's enabled is visible without scrolling.
+          ..sort((a, b) {
+            final selA = _apps.contains(a.name) ? 0 : 1;
+            final selB = _apps.contains(b.name) ? 0 : 1;
+            if (selA != selB) return selA - selB;
+            return a.displayName.toLowerCase().compareTo(
+              b.displayName.toLowerCase(),
+            );
+          });
+
+    final nothingToShow = manualApps.isEmpty && filteredApps.isEmpty;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _vpnMode == VpnMode.general
+                    ? AppLocalizations.of(context)!.splitTunnelAppsExclude
+                    : AppLocalizations.of(context)!.splitTunnelAppsInclude,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-            ),
-            onChanged: (value) {
-              setState(() {
-                _appSearchQuery = value;
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: _isLoadingApps
-                ? const Center(child: CircularProgressIndicator())
-                : filteredApps.isEmpty
+              SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _appSearchController,
+                      decoration: InputDecoration(
+                        hintText: Platform.isWindows
+                            ? 'Search apps or type a process name (game.exe)'
+                            : 'Search apps or type a process name',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      // No onSubmitted: Enter must never silently ADD the query
+                      // as a process name — adding is the explicit "+" button.
+                      onChanged: (value) {
+                        setState(() {
+                          _appSearchQuery = value;
+                        });
+                      },
+                    ),
+                  ),
+                  if (query.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      tooltip: 'Add "${_manualAppName()}" as a process name',
+                      onPressed: _addManualApp,
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  IconButton.outlined(
+                    tooltip: 'Rescan installed apps and running processes',
+                    onPressed: _isLoadingApps ? null : _loadInstalledApps,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: _isLoadingApps
+                    ? const Center(child: CircularProgressIndicator())
+                    : nothingToShow
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -1029,17 +1459,67 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                             SizedBox(height: 8),
                             Text(
                               AppLocalizations.of(context)!.splitTunnelNoApps,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.outline,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outline,
                                   ),
                             ),
+                            const SizedBox(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 32,
+                              ),
+                              child: Text(
+                                'Tip: type a name to also search running processes, '
+                                'or start the app and press the refresh button — '
+                                'running processes appear in this list with their exact process name.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outline,
+                                    ),
+                              ),
+                            ),
+                            if (query.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              FilledButton.tonalIcon(
+                                onPressed: _addManualApp,
+                                icon: const Icon(Icons.add, size: 18),
+                                label: Text(
+                                  'Add "${_manualAppName()}" manually',
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       )
                     : ListView.builder(
-                        itemCount: filteredApps.length,
+                        itemCount: manualApps.length + filteredApps.length,
                         itemBuilder: (context, index) {
-                          final app = filteredApps[index];
+                          // Manual/unscanned entries first — always checked.
+                          if (index < manualApps.length) {
+                            final name = manualApps[index];
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 4),
+                              child: CheckboxListTile(
+                                dense: true,
+                                value: true,
+                                onChanged: (_) => _toggleApp(name),
+                                secondary: const Icon(Icons.terminal, size: 20),
+                                title: Text(name),
+                                subtitle: Text(
+                                  'Added by process name',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            );
+                          }
+
+                          final app = filteredApps[index - manualApps.length];
                           final isSelected = _apps.contains(app.name);
 
                           return Card(
@@ -1047,48 +1527,300 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen>
                             child: CheckboxListTile(
                               dense: true,
                               value: isSelected,
-                              onChanged: isConnected
-                                  ? null
-                                  : (value) => _toggleApp(app.name),
-                              secondary: const Icon(Icons.apps, size: 20),
+                              onChanged: (value) => _toggleApp(app.name),
+                              secondary: _appIcon(app),
                               title: Text(app.displayName),
                               subtitle: Text(
-                                app.name,
+                                app.running
+                                    ? '${app.name} — running now'
+                                    : app.name,
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ),
                           );
                         },
                       ),
-          ),
-          if (_apps.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(12),
               ),
-              child: Row(
+              if (_apps.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        AppLocalizations.of(
+                          context,
+                        )!.splitTunnelSelectedApps(_apps.length),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Add routing list dialog ──
+
+class _AddRoutingListDialog extends StatefulWidget {
+  final ConfigService configService;
+
+  const _AddRoutingListDialog({required this.configService});
+
+  @override
+  State<_AddRoutingListDialog> createState() => _AddRoutingListDialogState();
+}
+
+class _AddRoutingListDialogState extends State<_AddRoutingListDialog> {
+  final _name = TextEditingController();
+  final _urls = TextEditingController();
+  final _path = TextEditingController();
+  bool _fromFile = false;
+  bool _busy = false;
+  String? _checkResult;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _urls.dispose();
+    _path.dispose();
+    super.dispose();
+  }
+
+  List<String> get _urlList =>
+      _urls.text.split(RegExp(r'[\s,]+')).where((s) => s.isNotEmpty).toList();
+
+  Future<void> _browse() async {
+    final file = await openFile(
+      acceptedTypeGroups: [
+        const XTypeGroup(label: 'Lists', extensions: ['lst', 'txt']),
+        const XTypeGroup(label: 'All files'),
+      ],
+    );
+    if (file != null) {
+      setState(() {
+        _path.text = file.path;
+        if (_name.text.trim().isEmpty) {
+          _name.text = file.name.replaceAll(RegExp(r'\.(lst|txt)$'), '');
+        }
+      });
+    }
+  }
+
+  bool get _sourceFilled =>
+      _fromFile ? _path.text.trim().isNotEmpty : _urlList.isNotEmpty;
+
+  /// Dry-run fetch: shows "Found N valid entries (M skipped)" before saving.
+  Future<void> _check() async {
+    setState(() {
+      _busy = true;
+      _checkResult = null;
+      _error = null;
+    });
+    try {
+      final (entries, skipped, errors) = await widget.configService
+          .fetchRoutingSource(
+            urls: _fromFile ? const [] : _urlList,
+            filePath: _fromFile ? _path.text.trim() : '',
+          );
+      if (!mounted) return;
+      setState(() {
+        _checkResult =
+            'Found ${entries.length} valid entries${skipped > 0 ? ' ($skipped skipped)' : ''}'
+            '${errors.isNotEmpty ? ' · ${errors.length} sources failed' : ''}';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _add() async {
+    final name = _name.text.trim().isEmpty
+        ? (_fromFile ? 'Local list' : 'Custom list')
+        : _name.text.trim();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final list = await widget.configService.addRoutingList(
+        name: name,
+        urls: _fromFile ? const [] : _urlList,
+        filePath: _fromFile ? _path.text.trim() : '',
+      );
+      if (mounted) Navigator.pop(context, list);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: const Text('Add routing list'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'A plain-text list: one domain, IP or CIDR per line '
+              '(# comments allowed). URL lists refresh automatically '
+              'when older than 24 hours.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.link, size: 18),
+                  label: Text('From URL'),
+                ),
+                ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.description_outlined, size: 18),
+                  label: Text('From file'),
+                ),
+              ],
+              selected: {_fromFile},
+              onSelectionChanged: (v) => setState(() {
+                _fromFile = v.first;
+                _checkResult = null;
+                _error = null;
+              }),
+            ),
+            const SizedBox(height: 12),
+            if (_fromFile)
+              Row(
                 children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  Expanded(
+                    child: TextField(
+                      controller: _path,
+                      decoration: const InputDecoration(
+                        labelText: 'File path',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _browse,
+                    icon: const Icon(Icons.folder_open, size: 18),
+                    label: const Text('Browse'),
+                  ),
+                ],
+              )
+            else
+              TextField(
+                controller: _urls,
+                minLines: 1,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Raw URL(s), one per line',
+                  hintText:
+                      'https://raw.githubusercontent.com/user/repo/main/list.lst',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            const SizedBox(height: 12),
+            if (_busy)
+              const Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   SizedBox(width: 8),
-                  Text(
-                    AppLocalizations.of(context)!.splitTunnelSelectedApps(_apps.length),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  Text('Fetching…'),
+                ],
+              )
+            else if (_error != null)
+              Text(
+                _error!,
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
+              )
+            else if (_checkResult != null)
+              Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _checkResult!,
+                      style: const TextStyle(fontSize: 13),
                     ),
                   ),
                 ],
               ),
-            ),
-        ],
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        OutlinedButton(
+          onPressed: (_busy || !_sourceFilled) ? null : _check,
+          child: const Text('Check'),
+        ),
+        FilledButton(
+          onPressed: (_busy || !_sourceFilled) ? null : _add,
+          child: const Text('Add'),
+        ),
+      ],
     );
   }
 }
@@ -1145,7 +1877,9 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
   }
 
   Future<void> _discover() async {
-    final result = await widget.discoveryService.discoverRelatedDomains(widget.domain);
+    final result = await widget.discoveryService.discoverRelatedDomains(
+      widget.domain,
+    );
     if (!mounted) return;
 
     setState(() {
@@ -1188,7 +1922,9 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                       TextField(
                         controller: _nameController,
                         decoration: InputDecoration(
-                          labelText: AppLocalizations.of(context)!.discoveryGroupName,
+                          labelText: AppLocalizations.of(
+                            context,
+                          )!.discoveryGroupName,
                           prefixIcon: Icon(Icons.folder_outlined, size: 20),
                           isDense: true,
                         ),
@@ -1199,19 +1935,33 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                         dense: true,
                         leading: const Icon(Icons.language, size: 18),
                         title: Text(widget.domain),
-                        trailing: const Icon(Icons.check, size: 18, color: Colors.green),
+                        trailing: const Icon(
+                          Icons.check,
+                          size: 18,
+                          color: Colors.green,
+                        ),
                       ),
                       // Discovered domains with checkboxes
-                      ..._discovered.map((domain) => CheckboxListTile(
-                            dense: true,
-                            value: _selected[domain] ?? false,
-                            onChanged: (v) => setState(() => _selected[domain] = v ?? false),
-                            secondary: const Icon(Icons.link, size: 18),
-                            title: Text(domain, style: const TextStyle(fontSize: 13)),
-                          )),
+                      ..._discovered.map(
+                        (domain) => CheckboxListTile(
+                          dense: true,
+                          value: _selected[domain] ?? false,
+                          onChanged: (v) =>
+                              setState(() => _selected[domain] = v ?? false),
+                          secondary: const Icon(Icons.link, size: 18),
+                          title: Text(
+                            domain,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
                     ] else ...[
                       if (_error != null) ...[
-                        Icon(Icons.info_outline, size: 32, color: Theme.of(context).colorScheme.outline),
+                        Icon(
+                          Icons.info_outline,
+                          size: 32,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                         SizedBox(height: 8),
                       ],
                       Text(
@@ -1222,8 +1972,8 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                       Text(
                         AppLocalizations.of(context)!.discoveryAddStandalone,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                       ),
                     ],
                   ],
@@ -1252,7 +2002,9 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                       selectedDomains: [],
                     ),
                   ),
-                  child: Text(AppLocalizations.of(context)!.discoveryWithoutGroup),
+                  child: Text(
+                    AppLocalizations.of(context)!.discoveryWithoutGroup,
+                  ),
                 ),
               FilledButton(
                 onPressed: () {
@@ -1271,7 +2023,11 @@ class _DiscoveryDialogState extends State<_DiscoveryDialog> {
                     ),
                   );
                 },
-                child: Text(_discovered.isNotEmpty ? AppLocalizations.of(context)!.discoveryAddGroup : AppLocalizations.of(context)!.commonAdd),
+                child: Text(
+                  _discovered.isNotEmpty
+                      ? AppLocalizations.of(context)!.discoveryAddGroup
+                      : AppLocalizations.of(context)!.commonAdd,
+                ),
               ),
             ],
     );
@@ -1285,101 +2041,470 @@ class InstalledApp {
   final String displayName;
   final String path;
 
+  /// True when this entry comes from the running-process list rather than an
+  /// install location — the exact process name the client's filter matches.
+  final bool running;
+
+  /// PNG icon extracted from the app ('' = none, show the generic icon).
+  final String iconPath;
+
   InstalledApp({
     required this.name,
     required this.displayName,
     required this.path,
+    this.running = false,
+    this.iconPath = '',
   });
+
+  InstalledApp withIcon(String icon) => InstalledApp(
+        name: name,
+        displayName: displayName,
+        path: path,
+        running: running,
+        iconPath: icon,
+      );
 }
 
 // ── App discovery (Fix #2) ──
 //
 // These run inside `Isolate.run`, so they must be top-level (no `this`, no
 // BuildContext). They are pure IO/CPU and return sendable `InstalledApp`s
-// (only `final String` fields). The heavy filesystem walk therefore runs off
-// the UI isolate.
+// (only `final String`/`bool` fields).
+//
+// Windows sources mirror Settings → Apps → Installed apps: the registry
+// Uninstall hives (classic installers) + Get-AppxPackage (Store/MSIX),
+// with real app icons extracted into a temp cache. No blind filesystem
+// walks — those surfaced every helper and uninstaller exe on the machine.
+// Running processes are a separate, search-only source.
 
 Future<List<InstalledApp>> _discoverInstalledApps() async {
-  if (Platform.isMacOS) {
-    return _getInstalledAppsMacOS();
-  }
-  return _getInstalledAppsWindows();
+  final apps = Platform.isMacOS
+      ? await _getInstalledAppsMacOS()
+      : await _getInstalledAppsWindows();
+
+  // Running processes cover portable builds and games no installer knows
+  // about, with the exact process name the client's filter matches. The UI
+  // shows them only in search results so the default list stays clean.
+  final running = await _getRunningProcesses();
+  final known = apps.map((a) => a.name.toLowerCase()).toSet();
+  apps.addAll(running.where((r) => !known.contains(r.name.toLowerCase())));
+  return apps;
 }
 
-Future<List<InstalledApp>> _getInstalledAppsWindows() async {
+/// Parse a registry DisplayIcon value down to an .exe path, or null.
+/// Handles `"C:\p\app.exe",0`, `C:\p\app.exe,0`, plain paths; .ico
+/// references yield null (they identify no process).
+String? registryIconExePath(String? displayIcon) {
+  var icon = (displayIcon ?? '').trim().replaceAll('"', '');
+  if (icon.isEmpty) return null;
+  final comma = icon.lastIndexOf(',');
+  if (comma > 0 && int.tryParse(icon.substring(comma + 1).trim()) != null) {
+    icon = icon.substring(0, comma).trim();
+  }
+  return icon.toLowerCase().endsWith('.exe') ? icon : null;
+}
+
+String _winBasename(String path) => path.split('\\').last.split('/').last;
+
+/// Classic installed applications from the registry Uninstall hives — the
+/// same set Windows shows in Settings → Apps → Installed apps. The process
+/// name comes from DisplayIcon (usually the app's own exe) or a shallow
+/// InstallLocation scan.
+Future<List<InstalledApp>> _getRegistryAppsWindows() async {
   final apps = <InstalledApp>[];
+  try {
+    final result = await Process.run('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      r"Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -and $_.SystemComponent -ne 1 } | Select-Object DisplayName, DisplayIcon, InstallLocation | ConvertTo-Json -Compress",
+    ]).timeout(const Duration(seconds: 20));
+    if (result.exitCode != 0) return apps;
 
-  final programFiles = Platform.environment['ProgramFiles'] ?? r'C:\Program Files';
-  final programFilesX86 = Platform.environment['ProgramFiles(x86)'] ?? r'C:\Program Files (x86)';
-  final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
-  final appData = Platform.environment['APPDATA'] ?? '';
+    final decoded = jsonDecode((result.stdout as String).trim());
+    final items = decoded is List ? decoded : [decoded];
+    final seen = <String>{};
+    for (final item in items) {
+      final name = (item['DisplayName'] as String?)?.trim() ?? '';
+      if (name.isEmpty) continue;
+      final exePath = await _resolveRegistryExe(
+        item['DisplayIcon'] as String?,
+        item['InstallLocation'] as String?,
+        name,
+      );
+      if (exePath == null) continue;
+      final exe = _winBasename(exePath);
+      if (!seen.add(exe.toLowerCase())) continue;
+      apps.add(InstalledApp(name: exe, displayName: name, path: exePath));
+    }
+  } catch (e) {
+    debugPrint('Registry app scan failed: $e');
+  }
+  return apps;
+}
 
-  final searchDirs = [
-    programFiles,
-    programFilesX86,
-    if (localAppData.isNotEmpty) localAppData,
-    if (appData.isNotEmpty) appData,
-  ];
-
-  for (final dirPath in searchDirs) {
-    final dir = Directory(dirPath);
-    if (!await dir.exists()) continue;
-
-    try {
-      await for (final entity in dir.list(recursive: false)) {
-        if (entity is Directory) {
-          try {
-            await for (final file in entity.list(recursive: false)) {
-              if (file is File && file.path.toLowerCase().endsWith('.exe')) {
-                final name = file.path.split(Platform.pathSeparator).last;
-                if (!_isSystemExecutable(name)) {
-                  apps.add(InstalledApp(
-                    name: name,
-                    displayName: _getDisplayName(name, entity.path),
-                    path: file.path,
-                  ));
-                }
-              }
-            }
-          } catch (_) {}
-        }
-      }
-    } catch (_) {}
+/// Map an Uninstall entry to its main executable: DisplayIcon first, else
+/// the best exe found by a shallow (2-level) InstallLocation scan.
+Future<String?> _resolveRegistryExe(
+  String? displayIcon,
+  String? installLocation,
+  String displayName,
+) async {
+  final fromIcon = registryIconExePath(displayIcon);
+  if (fromIcon != null &&
+      !_isSystemExecutable(_winBasename(fromIcon)) &&
+      await File(fromIcon).exists()) {
+    return fromIcon;
   }
 
-  final commonApps = [
-    InstalledApp(name: 'chrome.exe', displayName: 'Google Chrome', path: ''),
-    InstalledApp(name: 'firefox.exe', displayName: 'Mozilla Firefox', path: ''),
-    InstalledApp(name: 'msedge.exe', displayName: 'Microsoft Edge', path: ''),
-    InstalledApp(name: 'opera.exe', displayName: 'Opera', path: ''),
-    InstalledApp(name: 'brave.exe', displayName: 'Brave Browser', path: ''),
-    InstalledApp(name: 'telegram.exe', displayName: 'Telegram', path: ''),
-    InstalledApp(name: 'discord.exe', displayName: 'Discord', path: ''),
-    InstalledApp(name: 'slack.exe', displayName: 'Slack', path: ''),
-    InstalledApp(name: 'spotify.exe', displayName: 'Spotify', path: ''),
-    InstalledApp(name: 'steam.exe', displayName: 'Steam', path: ''),
-    InstalledApp(name: 'epicgameslauncher.exe', displayName: 'Epic Games', path: ''),
-    InstalledApp(name: 'code.exe', displayName: 'VS Code', path: ''),
-    InstalledApp(name: 'idea64.exe', displayName: 'IntelliJ IDEA', path: ''),
-    InstalledApp(name: 'torrent.exe', displayName: 'Torrent Client', path: ''),
-    InstalledApp(name: 'qbittorrent.exe', displayName: 'qBittorrent', path: ''),
-  ];
+  final loc = (installLocation ?? '').trim().replaceAll('"', '');
+  if (loc.isEmpty) return null;
+  final dir = Directory(loc);
+  if (!await dir.exists()) return null;
 
-  for (final app in commonApps) {
-    if (!apps.any((a) => a.name.toLowerCase() == app.name.toLowerCase())) {
-      apps.add(app);
+  final candidates = <File>[];
+  try {
+    await for (final e in dir.list(recursive: false)) {
+      if (e is File && e.path.toLowerCase().endsWith('.exe')) {
+        candidates.add(e);
+      } else if (e is Directory) {
+        try {
+          await for (final f in e.list(recursive: false)) {
+            if (f is File && f.path.toLowerCase().endsWith('.exe')) {
+              candidates.add(f);
+            }
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+
+  final usable = candidates
+      .where((f) => !_isSystemExecutable(_winBasename(f.path)))
+      .toList();
+  if (usable.isEmpty) return null;
+
+  // Prefer the exe whose name appears in the display name (chrome.exe for
+  // "Google Chrome"); otherwise the largest binary is usually the app.
+  String alnum(String v) => v.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  final dn = alnum(displayName);
+  for (final f in usable) {
+    final stem = alnum(
+      _winBasename(f.path).replaceAll(RegExp(r'\.exe$', caseSensitive: false), ''),
+    );
+    if (stem.length >= 3 && dn.contains(stem)) return f.path;
+  }
+  int sizeOf(File f) {
+    try {
+      return f.lengthSync();
+    } catch (_) {
+      return 0;
     }
   }
 
-  return _deduplicateAndSort(apps);
+  usable.sort((a, b) => sizeOf(b).compareTo(sizeOf(a)));
+  return usable.first.path;
+}
+
+/// Deterministic, file-safe cache name for an exe path's icon PNG.
+String iconCacheName(String exePath) {
+  final safe = exePath.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+  final tail = safe.length > 80 ? safe.substring(safe.length - 80) : safe;
+  return '${tail}_${exePath.length}.png';
+}
+
+/// Extract app icons for [exePaths] as PNGs into a temp cache with ONE
+/// PowerShell batch (System.Drawing ExtractAssociatedIcon — no plugins).
+/// Returns exePath → pngPath for successes; failures are simply absent.
+Future<Map<String, String>> _extractIconsWindows(List<String> exePaths) async {
+  final out = <String, String>{};
+  if (exePaths.isEmpty) return out;
+  try {
+    final dir = Directory('${Directory.systemTemp.path}\\trusty_icons');
+    if (!await dir.exists()) await dir.create(recursive: true);
+
+    final jobs = <Map<String, String>>[];
+    for (final exe in exePaths) {
+      final png = '${dir.path}\\${iconCacheName(exe)}';
+      if (await File(png).exists()) {
+        out[exe] = png;
+      } else {
+        jobs.add({'exe': exe, 'png': png});
+      }
+    }
+    if (jobs.isNotEmpty) {
+      final manifest = File('${dir.path}\\jobs.json');
+      await manifest.writeAsString(jsonEncode(jobs));
+      final script = File('${dir.path}\\extract.ps1');
+      await script.writeAsString(
+        'Add-Type -AssemblyName System.Drawing\n'
+        "\$jobs = ConvertFrom-Json ([IO.File]::ReadAllText('${manifest.path}'))\n"
+        'foreach (\$j in \$jobs) {\n'
+        '  try {\n'
+        '    \$i = [System.Drawing.Icon]::ExtractAssociatedIcon(\$j.exe)\n'
+        '    if (\$i) { \$i.ToBitmap().Save(\$j.png, [System.Drawing.Imaging.ImageFormat]::Png) }\n'
+        '  } catch {}\n'
+        '}\n',
+      );
+      await Process.run('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        script.path,
+      ]).timeout(const Duration(seconds: 30));
+      for (final j in jobs) {
+        if (await File(j['png']!).exists()) out[j['exe']!] = j['png']!;
+      }
+    }
+  } catch (e) {
+    debugPrint('Icon extraction failed: $e');
+  }
+  return out;
+}
+
+Future<List<InstalledApp>> _getInstalledAppsWindows() async {
+  final apps = <InstalledApp>[
+    ...await _getRegistryAppsWindows(),
+    // Store (MSIX/UWP) apps — Apple Music, WhatsApp etc. — are part of the
+    // system's Installed Apps list too, reachable only via the package
+    // manager.
+    ...await _getStoreAppsWindows(),
+  ];
+
+  final deduped = _deduplicateAndSort(apps);
+
+  // Icons in one batch, cached in temp; Store apps already carry a PNG.
+  final icons = await _extractIconsWindows([
+    for (final a in deduped)
+      if (a.iconPath.isEmpty && a.path.toLowerCase().endsWith('.exe')) a.path,
+  ]);
+  return [
+    for (final a in deduped)
+      icons.containsKey(a.path) ? a.withIcon(icons[a.path]!) : a,
+  ];
+}
+
+/// "AppleInc.AppleMusicWin" → "Apple Music Win": drop the publisher prefix
+/// and split camel case, so Store packages are readable and searchable.
+String storeAppDisplayName(String packageName) {
+  var name = packageName.contains('.')
+      ? packageName.substring(packageName.indexOf('.') + 1)
+      : packageName;
+  name = name.replaceAll('.', ' ');
+  return name.replaceAllMapped(RegExp(r'(?<=[a-z0-9])(?=[A-Z])'), (_) => ' ');
+}
+
+/// All process names declared in an AppxManifest — one per `<Application>`
+/// node. The first is NOT always the main app (Xbox lists its helpers
+/// first), so every declared executable becomes a list entry. Unexpanded
+/// manifest tokens (`$targetnametoken$.exe`) are skipped.
+List<String> manifestExecutables(String manifestXml) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final m in RegExp(
+    r'Executable="([^"]+\.exe)"',
+    caseSensitive: false,
+  ).allMatches(manifestXml)) {
+    final exe = m.group(1)!.split(RegExp(r'[\\/]')).last;
+    if (exe.contains(r'$')) continue;
+    if (seen.add(exe.toLowerCase())) result.add(exe);
+  }
+  return result;
+}
+
+/// Resolve an AppxManifest `<Logo>` path to an actual asset file (packages
+/// ship `Logo.scale-200.png`-style variants, rarely the literal name).
+Future<String?> _resolveStoreLogo(String location, String logo) async {
+  final rel = logo.replaceAll('/', '\\');
+  final exact = File('$location\\$rel');
+  if (await exact.exists()) return exact.path;
+
+  final dot = rel.lastIndexOf('.');
+  if (dot < 0) return null;
+  final stem = rel.substring(0, dot);
+  for (final variant in [
+    'scale-100',
+    'scale-125',
+    'scale-150',
+    'scale-200',
+    'scale-400',
+    'targetsize-48',
+    'targetsize-32',
+  ]) {
+    final f = File('$location\\$stem.$variant.png');
+    if (await f.exists()) return f.path;
+  }
+
+  // Last resort: any asset starting with the stem's basename.
+  try {
+    final sep = stem.lastIndexOf('\\');
+    final assetDir = Directory(
+      sep < 0 ? location : '$location\\${stem.substring(0, sep)}',
+    );
+    final prefix = _winBasename(stem).toLowerCase();
+    if (await assetDir.exists()) {
+      await for (final f in assetDir.list(recursive: false)) {
+        if (f is File &&
+            _winBasename(f.path).toLowerCase().startsWith('$prefix.')) {
+          return f.path;
+        }
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/// Microsoft Store apps via `Get-AppxPackage`: package name + install
+/// location, then process names and the logo from each AppxManifest.xml.
+Future<List<InstalledApp>> _getStoreAppsWindows() async {
+  final apps = <InstalledApp>[];
+  try {
+    final result = await Process.run('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      r'Get-AppxPackage | Where-Object { -not $_.IsFramework } | Select-Object Name, InstallLocation | ConvertTo-Json -Compress',
+    ]).timeout(const Duration(seconds: 20));
+    if (result.exitCode != 0) return apps;
+
+    final decoded = jsonDecode((result.stdout as String).trim());
+    final packages = decoded is List ? decoded : [decoded];
+    // System shell packages live under C:\Windows (SystemApps entries carry
+    // GUID names, "windows.immersivecontrolpanel" sits right in C:\Windows),
+    // so filter by location as well as by name prefix.
+    final winDir = (Platform.environment['WINDIR'] ?? r'C:\Windows')
+        .toLowerCase();
+    for (final pkg in packages) {
+      final name = pkg['Name'] as String? ?? '';
+      final location = pkg['InstallLocation'] as String? ?? '';
+      if (name.isEmpty || location.isEmpty) continue;
+      if (name.startsWith('Microsoft.Windows') ||
+          name.startsWith('MicrosoftWindows.') ||
+          location.toLowerCase().startsWith('$winDir\\')) {
+        continue;
+      }
+      var exes = const <String>[];
+      var iconPath = '';
+      try {
+        final manifest = File('$location\\AppxManifest.xml');
+        if (await manifest.exists()) {
+          final xml = await manifest.readAsString();
+          exes = manifestExecutables(xml);
+          final logo = RegExp(r'<Logo>([^<]+)</Logo>').firstMatch(xml)?.group(1);
+          if (logo != null) {
+            iconPath = await _resolveStoreLogo(location, logo.trim()) ?? '';
+          }
+        }
+      } catch (_) {}
+
+      final display = storeAppDisplayName(name);
+      for (final exe in exes) {
+        apps.add(InstalledApp(
+          name: exe,
+          displayName: display,
+          path: location,
+          iconPath: iconPath,
+        ));
+      }
+    }
+  } catch (_) {
+    // PowerShell unavailable/slow — the rest of the scan still works.
+  }
+  return apps;
+}
+
+/// Extract the process name from a `tasklist /fo csv` line.
+/// Returns null for lines that don't parse.
+String? tasklistProcessName(String csvLine) {
+  return RegExp(r'^"([^"]+)"').firstMatch(csvLine)?.group(1);
+}
+
+/// Infrastructure processes that make no sense as split-tunnel entries —
+/// including our own client (routing the tunnel through itself).
+const _systemProcesses = {
+  // Windows
+  'svchost.exe', 'csrss.exe', 'wininit.exe', 'winlogon.exe', 'smss.exe',
+  'lsass.exe', 'services.exe', 'dwm.exe', 'fontdrvhost.exe', 'conhost.exe',
+  'runtimebroker.exe', 'sihost.exe', 'taskhostw.exe', 'dllhost.exe',
+  'searchindexer.exe', 'spoolsv.exe', 'audiodg.exe', 'ctfmon.exe',
+  'msmpeng.exe', 'securityhealthservice.exe', 'registry', 'system',
+  'memory compression', 'tasklist.exe',
+  // macOS
+  'launchd', 'kernel_task', 'windowserver', 'loginwindow', 'cfprefsd',
+  'distnoted', 'mds', 'mds_stores', 'mdworker', 'ps',
+  // This app
+  'trusty.exe', 'trusttunnel_client.exe', 'trusty', 'trusttunnel_client',
+};
+
+/// Currently running processes (tasklist / ps). Marked with `running: true`
+/// so the UI can label them and show them only during search.
+Future<List<InstalledApp>> _getRunningProcesses() async {
+  final names = <String>{};
+  try {
+    if (Platform.isWindows) {
+      final result = await Process.run('tasklist', [
+        '/fo',
+        'csv',
+        '/nh',
+      ]).timeout(const Duration(seconds: 10));
+      if (result.exitCode != 0) return [];
+      for (final line in const LineSplitter().convert(
+        result.stdout as String,
+      )) {
+        final name = tasklistProcessName(line);
+        if (name != null &&
+            name.toLowerCase().endsWith('.exe') &&
+            !_systemProcesses.contains(name.toLowerCase())) {
+          names.add(name);
+        }
+      }
+    } else {
+      final result = await Process.run('ps', [
+        '-axco',
+        'comm=',
+      ]).timeout(const Duration(seconds: 10));
+      if (result.exitCode != 0) return [];
+      for (final line in const LineSplitter().convert(
+        result.stdout as String,
+      )) {
+        final name = line.trim();
+        if (name.isNotEmpty && !_systemProcesses.contains(name.toLowerCase())) {
+          names.add(name);
+        }
+      }
+    }
+  } catch (_) {
+    return [];
+  }
+
+  final sorted = names.toList()
+    ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  return sorted
+      .map(
+        (n) => InstalledApp(
+          name: n,
+          displayName: n.toLowerCase().endsWith('.exe')
+              ? n.substring(0, n.length - 4)
+              : n,
+          path: '',
+          running: true,
+        ),
+      )
+      .toList();
 }
 
 Future<List<InstalledApp>> _getInstalledAppsMacOS() async {
   final apps = <InstalledApp>[];
 
-  final homeDir = Platform.environment['HOME'] ?? '/Users/${Platform.environment['USER']}';
+  final homeDir =
+      Platform.environment['HOME'] ?? '/Users/${Platform.environment['USER']}';
   final searchDirs = [
     '/Applications',
+    // System apps — Music (Apple Music), Safari, Mail live here, not in
+    // /Applications.
+    '/System/Applications',
     '$homeDir/Applications',
   ];
 
@@ -1405,35 +2530,17 @@ Future<List<InstalledApp>> _getInstalledAppsMacOS() async {
             } catch (_) {}
           }
           if (!_isSystemAppMacOS(appName)) {
-            apps.add(InstalledApp(
-              name: processName,
-              displayName: appName,
-              path: entity.path,
-            ));
+            apps.add(
+              InstalledApp(
+                name: processName,
+                displayName: appName,
+                path: entity.path,
+              ),
+            );
           }
         }
       }
     } catch (_) {}
-  }
-
-  final commonApps = [
-    InstalledApp(name: 'Google Chrome', displayName: 'Google Chrome', path: ''),
-    InstalledApp(name: 'firefox', displayName: 'Firefox', path: ''),
-    InstalledApp(name: 'Safari', displayName: 'Safari', path: ''),
-    InstalledApp(name: 'Discord', displayName: 'Discord', path: ''),
-    InstalledApp(name: 'Telegram', displayName: 'Telegram', path: ''),
-    InstalledApp(name: 'Slack', displayName: 'Slack', path: ''),
-    InstalledApp(name: 'Spotify', displayName: 'Spotify', path: ''),
-    InstalledApp(name: 'steam_osx', displayName: 'Steam', path: ''),
-    InstalledApp(name: 'Electron', displayName: 'VS Code', path: ''),
-    InstalledApp(name: 'idea', displayName: 'IntelliJ IDEA', path: ''),
-    InstalledApp(name: 'qbittorrent', displayName: 'qBittorrent', path: ''),
-  ];
-
-  for (final app in commonApps) {
-    if (!apps.any((a) => a.name.toLowerCase() == app.name.toLowerCase())) {
-      apps.add(app);
-    }
   }
 
   return _deduplicateAndSort(apps);
@@ -1441,8 +2548,11 @@ Future<List<InstalledApp>> _getInstalledAppsMacOS() async {
 
 bool _isSystemAppMacOS(String appName) {
   final systemApps = [
-    'Utilities', 'Automator', 'Migration Assistant',
-    'System Preferences', 'System Settings',
+    'Utilities',
+    'Automator',
+    'Migration Assistant',
+    'System Preferences',
+    'System Settings',
   ];
   return systemApps.any((s) => appName.contains(s));
 }
@@ -1463,19 +2573,19 @@ List<InstalledApp> _deduplicateAndSort(List<InstalledApp> apps) {
 
 bool _isSystemExecutable(String name) {
   final systemExes = [
-    'uninstall', 'uninst', 'setup', 'install', 'update',
-    'updater', 'helper', 'crash', 'reporter', 'service',
+    'uninstall',
+    'uninst',
+    'setup',
+    'install',
+    'update',
+    'updater',
+    'helper',
+    'crash',
+    'reporter',
+    'service',
   ];
   final lowerName = name.toLowerCase();
   return systemExes.any((s) => lowerName.contains(s));
-}
-
-String _getDisplayName(String exeName, String dirPath) {
-  final dirName = dirPath.split(Platform.pathSeparator).last;
-  if (dirName.isNotEmpty && !dirName.contains('.')) {
-    return dirName;
-  }
-  return exeName.replaceAll('.exe', '').replaceAll('.EXE', '');
 }
 
 // ── Log suggestion extraction (Fix #3) ──

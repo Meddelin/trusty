@@ -19,7 +19,9 @@
 
 - Material Design 3 interface with light/dark theme
 - One-click VPN connection — connects as soon as the tunnel is up, disconnects instantly
-- **Server deployment to VPS** — automatic setup via SSH, with optional connection filtering (anti-probe TLS prefix)
+- **Multiple servers** — keep a list of servers and switch between them from the Home screen; per-server passwords in the OS keystore
+- **Server deployment to VPS** — automatic setup via SSH, with optional connection filtering (anti-probe TLS prefix); a deployed server is added to the list without touching existing ones
+- **Ready-made routing lists** — one-click "sites blocked in Russia" preset ([itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains)) plus your own lists from a GitHub raw URL (auto-updating every 24h) or a local file
 - Split tunneling (General/Selective modes)
   - Domains, IPs, CIDR ranges and applications
   - Bulk import — paste a whole list of domains/IPs/CIDR at once
@@ -89,13 +91,13 @@ Trusty will automatically: connect via SSH → verify the host key (trust-on-fir
 
 If TrustTunnel is already installed on the server, Trusty asks for confirmation before replacing it. If the server's SSH host key changed (e.g. you rebuilt the VPS), the deploy stops and offers **Trust new host key & retry**.
 
-After installation, click "Apply Client Settings" to auto-fill connection settings (including the generated prefix, if enabled).
+After installation, click "Apply Client Settings" — the new server is added to your server list and becomes active (existing servers are kept untouched), including the generated prefix, if enabled.
 
 See [CONFIGURATION.md](CONFIGURATION.md#remote-server-deployment) for details.
 
 ## Connection Settings
 
-**Settings** tab:
+**Servers** tab (per-server), **Settings** tab (app-level):
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
@@ -104,7 +106,7 @@ See [CONFIGURATION.md](CONFIGURATION.md#remote-server-deployment) for details.
 | Port | Port | `443` |
 | Username | VPN login | `user1` |
 | Password | VPN password (stored in the OS keystore) | `***` |
-| DNS | DNS server | `8.8.8.8`, `tls://1.1.1.1` |
+| DNS | DNS server(s), comma-separated | `8.8.8.8`, `tls://1.1.1.1`, `https://dns.adguard-dns.com/dns-query, 8.8.8.8` |
 | Protocol | HTTP/2 or HTTP/3 | `http2` |
 | Client random prefix | Optional — only if your server filters by it | `a1b2c3d4` |
 
@@ -117,6 +119,8 @@ Two modes:
 - **Selective** — only specified traffic through VPN
 
 Supports: domains, IPs, CIDR, applications (`.exe` on Windows, `.app` on macOS).
+
+Paste anything into the add field — a full URL, domain, IP or CIDR — it's normalized and validated automatically (`https://VK.com/feed` → `vk.com`, garbage is rejected). Apps are picked from the installed-apps list, or added manually by process name for anything the scan misses. Everything stays editable while connected; changes apply on the next connect.
 
 Add entries one by one with **+**, or use the **paste-list** button to import a whole block at once (one entry per line, e.g.):
 
@@ -135,7 +139,7 @@ Domain groups with auto-discovery: when adding a single domain, Trusty finds rel
 | CLI | `trusttunnel_client.exe` | `trusttunnel_client` |
 | TUN driver | Wintun (`wintun.dll`) | Built-in utun |
 | Tray icon | `.ico` | `.png` |
-| App discovery | Program Files, AppData | `/Applications` |
+| App discovery | Installed Apps (registry) + Microsoft Store, with app icons; running processes in search | `/Applications`, `/System/Applications`; running processes in search |
 | Code signing | Not required | None (Right-click → Open once) |
 
 ## Troubleshooting

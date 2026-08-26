@@ -5,6 +5,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/setup_step.dart';
+import '../models/server_config.dart';
 import '../models/server_setup_config.dart';
 import 'config_service.dart';
 
@@ -36,10 +37,20 @@ String generateClientRandomPrefix(Random rnd) {
 
 class ServerSetupService extends ChangeNotifier {
   SetupStep _currentStep = SetupStep.idle;
+
+  /// The last real installation step that was attempted — kept when the run
+  /// fails so the checklist can mark the exact step that broke instead of
+  /// greying everything out (SetupStep.failed itself has no index).
+  SetupStep? _lastAttemptedStep;
   final List<String> _logs = [];
   String? _errorMessage;
   SSHClient? _client;
   bool _alreadyInstalled = false;
+
+  /// Set by [cancelInstallation]; checked between install steps. A mid-step
+  /// cancel aborts promptly anyway because the SSH connection is closed out
+  /// from under the running command.
+  bool _cancelled = false;
 
   // Set when the last connect failed on an SSH host-key mismatch; holds the
   // prefs key of the stored fingerprint so the UI can offer to forget it
@@ -48,10 +59,83 @@ class ServerSetupService extends ChangeNotifier {
 
   // Public getters
   SetupStep get currentStep => _currentStep;
+  SetupStep? get lastAttemptedStep => _lastAttemptedStep;
   List<String> get logs => List.unmodifiable(_logs);
   String? get errorMessage => _errorMessage;
   bool get alreadyInstalled => _alreadyInstalled;
   bool get hostKeyMismatch => _mismatchedHostKeyPrefsKey != null;
+
+  /// The config the last install actually ran with (in-memory only — includes
+  /// the password). The success card renders from this, not from the raw form
+  /// fields, because the installer may have adjusted values (e.g. the port).
+  ServerSetupConfig? get lastConfig => _lastConfig;
+
+  /// The persisted non-secret outcome of the last successful deploy. Survives
+  /// app restarts (see [loadPersistedResult]) so the generated
+  /// client_random_prefix is never lost.
+  ServerSetupResult? get lastResult => _lastResult;
+
+  // SharedPreferences keys. Form defaults use the 'deploy_form_' prefix;
+  // ponytail: one JSON blob instead of nine individual keys — the model
+  // already knows how to (de)serialize exactly its non-secret fields.
+  static const String _formPrefsKey = 'deploy_form_config';
+  static const String _lastResultPrefsKey = 'deploy_last_result';
+
+  /// Save the non-secret deploy form fields so they survive an app restart.
+  /// Passwords are never persisted ([ServerSetupConfig.toJson] omits them).
+  static Future<void> saveFormDefaults(ServerSetupConfig config) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_formPrefsKey, jsonEncode(config.toJson()));
+    } catch (e) {
+      debugPrint('Failed to save deploy form defaults: $e');
+    }
+  }
+
+  /// Load the previously saved deploy form fields, or null when none exist.
+  static Future<ServerSetupConfig?> loadFormDefaults() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_formPrefsKey);
+      if (raw == null) return null;
+      return ServerSetupConfig.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>);
+    } catch (e) {
+      debugPrint('Failed to load deploy form defaults: $e');
+      return null;
+    }
+  }
+
+  /// Restore the last successful deploy result after an app restart so the
+  /// "Last deployment" card (and its Apply button) can be rebuilt.
+  Future<void> loadPersistedResult() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_lastResultPrefsKey);
+      if (raw == null) return;
+      _lastResult =
+          ServerSetupResult.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to load persisted deploy result: $e');
+    }
+  }
+
+  /// Persist the outcome of a successful install. Without this, restarting
+  /// the app between "install finished" and "Apply" would lose the generated
+  /// client_random_prefix and permanently lock the user out of a
+  /// filtering-enabled server.
+  Future<void> _persistResult(ServerSetupConfig config) async {
+    _lastResult = ServerSetupResult.fromConfig(config);
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _lastResultPrefsKey, jsonEncode(_lastResult!.toJson()));
+    } catch (e) {
+      debugPrint('Failed to persist deploy result: $e');
+    }
+  }
 
   /// Forget the stored fingerprint that caused the last host-key mismatch, so
   /// the next connection trusts the server's current key. Call only after the
@@ -68,6 +152,7 @@ class ServerSetupService extends ChangeNotifier {
   }
 
   void _setStep(SetupStep step) {
+    if (step.isInProgress) _lastAttemptedStep = step;
     _currentStep = step;
     notifyListeners();
   }
@@ -90,10 +175,11 @@ class ServerSetupService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clear the log panel only — the progress state (success card, error,
+  /// current step) must survive, otherwise Clear after a successful install
+  /// destroys the "Apply" button.
   void clearLogs() {
     _logs.clear();
-    _errorMessage = null;
-    _currentStep = SetupStep.idle;
     notifyListeners();
   }
 
@@ -158,6 +244,8 @@ class ServerSetupService extends ChangeNotifier {
     _logs.clear();
     _errorMessage = null;
     _alreadyInstalled = false;
+    _cancelled = false;
+    _lastAttemptedStep = null;
     _mismatchedHostKeyPrefsKey = null;
     notifyListeners();
 
@@ -169,42 +257,67 @@ class ServerSetupService extends ChangeNotifier {
       _errorMessage = validationError;
       _setStep(SetupStep.failed);
       _addLog('Error: $validationError');
-      throw Exception(validationError);
+      // The failed state IS the result — rethrowing would only produce an
+      // unhandled async exception in callers that (correctly) don't catch.
+      return;
     }
 
     try {
-      // Step 1: SSH connect
-      await _stepConnect(config);
-
-      // Step 2: Check system (may prompt to replace an existing install)
-      await _stepCheckSystem(config, confirmReplace);
-
-      // Step 3: Install TrustTunnel
-      await _stepInstall();
-
-      // Step 4: Upload configs
-      await _stepConfigure(config);
-
-      // Step 5: Obtain TLS certificate
-      await _stepCertificate(config);
-
-      // Step 6: Start systemd service
-      await _stepStartService();
-
-      // Step 7: Verify
-      await _stepVerify();
+      // Steps run in order; between each we bail out if the user pressed
+      // Cancel. A mid-step cancel aborts promptly anyway because
+      // cancelInstallation() closes the SSH connection under the command.
+      final steps = <Future<void> Function()>[
+        () => _stepConnect(config), // 1: SSH connect
+        () => _stepCheckSystem(config, confirmReplace), // 2: check system
+        _stepInstall, // 3: install TrustTunnel
+        () => _stepConfigure(config), // 4: upload configs
+        () => _stepCertificate(config), // 5: obtain TLS certificate
+        _stepStartService, // 6: start systemd service
+        _stepVerify, // 7: verify
+      ];
+      for (final step in steps) {
+        if (_cancelled) throw Exception('Installation cancelled');
+        await step();
+      }
+      if (_cancelled) throw Exception('Installation cancelled');
 
       _setStep(SetupStep.completed);
       _addLog('Installation completed successfully!');
+      await _persistResult(config);
     } on _SetupCancelled {
       _addLog('Installation cancelled — existing server was kept.');
-      disconnect();
       _setStep(SetupStep.idle);
     } catch (e) {
-      _errorMessage = e.toString();
-      _setStep(SetupStep.failed);
-      _addLog('Error: $e');
+      if (_cancelled) {
+        // User-initiated cancel: keep the clean message instead of whatever
+        // error the dying SSH channel produced.
+        _errorMessage = 'Installation cancelled';
+        _setStep(SetupStep.failed);
+      } else {
+        _errorMessage = e.toString();
+        _setStep(SetupStep.failed);
+        _addLog('Error: $e');
+      }
+    } finally {
+      // Whatever the outcome, never leave an authenticated root SSH session
+      // open (a cancel during the connect step could otherwise strand one).
+      disconnect();
     }
+  }
+
+  /// Cancel a running installation.
+  ///
+  /// Closes the SSH connection so any in-flight command dies promptly; the
+  /// install loop additionally checks the flag between steps and bails out
+  /// cleanly. No server-side rollback is attempted — the partial install is
+  /// simply left behind and a re-run overwrites it.
+  Future<void> cancelInstallation() async {
+    if (!_currentStep.isInProgress) return;
+    _cancelled = true;
+    _addLog('Installation cancelled by user.');
+    disconnect();
+    _errorMessage = 'Installation cancelled';
+    _setStep(SetupStep.failed);
   }
 
   /// Format raw fingerprint bytes as colon-separated lowercase hex.
@@ -538,25 +651,63 @@ class ServerSetupService extends ChangeNotifier {
     }
   }
 
-  /// Apply server setup to client connection config
+  /// Apply server setup to client connection config.
+  ///
+  /// Uses the in-memory install config when available; after an app restart
+  /// it falls back to the persisted [lastResult]. The password is never
+  /// persisted, so in the fallback case we keep the matched server's stored
+  /// password (re-deploy) or leave it empty for the user to enter in Settings.
   Future<void> applyToClientConfig(ConfigService configService) async {
+    // Trust the in-memory config only when the CURRENT run completed —
+    // after an aborted run ("Keep existing") _lastConfig belongs to the
+    // aborted attempt while the UI shows the persisted last SUCCESSFUL
+    // deploy, and applying the aborted values would corrupt the entry.
+    final setup =
+        _currentStep == SetupStep.completed ? _lastConfig : null;
+    final result =
+        setup != null ? ServerSetupResult.fromConfig(setup) : _lastResult;
+    if (result == null) return;
+
+    // Deploying to a fresh VPS must never clobber another saved server:
+    // update the entry with the same hostname if one exists, otherwise add a
+    // new entry. Either way it becomes the active server (saveConfig upserts
+    // by id and activates), and app-wide settings (DNS, split tunneling)
+    // carry over from the current config.
     final existingConfig = await configService.loadConfig();
-    // Only override the client prefix when the installer generated one.
-    final prefix = (_lastConfig?.clientRandomPrefix.isNotEmpty ?? false)
-        ? _lastConfig!.clientRandomPrefix
-        : existingConfig.clientRandomPrefix;
+    ServerConfig? match;
+    for (final s in await configService.loadServers()) {
+      if (s.hostname == result.domain) match = s;
+    }
+
+    // Only override the client prefix when the installer generated one;
+    // a brand-new server starts with an empty prefix, a re-deployed one
+    // keeps its stored value.
+    final prefix = result.clientRandomPrefix.isNotEmpty
+        ? result.clientRandomPrefix
+        : (match?.clientRandomPrefix ?? '');
+
+    // The persisted-result path has no password ('' — never stored).
+    // saveConfig never overwrites a stored password with an empty string,
+    // so a re-deployed server keeps its previously working credential.
+    final password = setup?.vpnPassword ?? '';
+
     final updatedConfig = existingConfig.copyWith(
-      hostname: _lastConfig?.domain ?? existingConfig.hostname,
-      address: _lastConfig?.host ?? existingConfig.address,
-      port: _lastConfig?.listenPort ?? existingConfig.port,
-      username: _lastConfig?.vpnUsername ?? existingConfig.username,
-      password: _lastConfig?.vpnPassword ?? existingConfig.password,
+      id: match?.id ?? ConfigService.newServerId(),
+      // A matched entry keeps its display name; a brand-new one must not
+      // inherit the currently active server's name.
+      name: match?.name ?? '',
+      hostname: result.domain,
+      address: result.host,
+      port: result.listenPort,
+      username: result.vpnUsername,
+      password: password,
       clientRandomPrefix: prefix,
     );
     await configService.saveConfig(updatedConfig);
   }
 
   ServerSetupConfig? _lastConfig;
+  ServerSetupResult? _lastResult;
 
   /// Wrapper that stores config for later use by applyToClientConfig
   Future<void> installAndRemember(

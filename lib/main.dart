@@ -8,12 +8,14 @@ import 'models/vpn_status.dart';
 import 'services/vpn_service.dart';
 import 'services/config_service.dart';
 import 'screens/home_screen.dart';
+import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/split_tunnel_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/server_setup_screen.dart';
 import 'services/server_setup_service.dart';
 import 'services/update_service.dart';
+import 'theme/app_theme.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/localization_helper.dart';
 
@@ -255,8 +257,8 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        theme: _buildLightTheme(),
-        darkTheme: _buildDarkTheme(),
+        theme: buildAppTheme(Brightness.light),
+        darkTheme: buildAppTheme(Brightness.dark),
         themeMode: ThemeMode.system,
         builder: (context, child) {
           L10n.init(AppLocalizations.of(context)!);
@@ -267,37 +269,6 @@ class MyApp extends StatelessWidget {
     );
   }
 
-  ThemeData _buildLightTheme() {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.blue,
-        brightness: Brightness.light,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
-  }
-
-  ThemeData _buildDarkTheme() {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.blue,
-        brightness: Brightness.dark,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
-  }
 }
 
 class MainScreen extends StatefulWidget {
@@ -409,6 +380,29 @@ class _MainScreenState extends State<MainScreen>
     await trayManager.setToolTip(L10n.tr.trayTooltip);
   }
 
+  /// Serializes the exit sequence (both the window-close and tray paths)
+  /// and guards the close dialog against a repeated X-click stacking dialogs.
+  bool _exiting = false;
+
+  /// The one exit path. Cleanup is fast (a synchronous process kill), so the
+  /// only thing that used to make quitting feel sluggish was awaiting
+  /// windowManager.destroy() — a native platform-channel round-trip that can
+  /// stall for seconds (or never complete, hanging the quit) before exit(0)
+  /// is reached. exit(0) itself tears the process down and the OS reclaims
+  /// the window, so the native teardown is given only a short bounded window
+  /// (enough to remove the tray icon and avoid a lingering Windows ghost)
+  /// and can never delay the quit.
+  Future<void> _exitApp() async {
+    if (_exiting) return;
+    _exiting = true;
+    await _performCleanup(graceful: true);
+    await Future.any([
+      windowManager.destroy(),
+      Future.delayed(const Duration(milliseconds: 200)),
+    ]);
+    exit(0);
+  }
+
   /// Perform cleanup before app exit
   /// [graceful] - if true, shows messages and waits properly; if false, does quick cleanup
   Future<void> _performCleanup({bool graceful = true}) async {
@@ -483,22 +477,44 @@ class _MainScreenState extends State<MainScreen>
 
         if (vpnService.status == VpnStatus.connected) {
           await vpnService.disconnect();
-        } else if (vpnService.status == VpnStatus.disconnected) {
+        } else if (vpnService.status == VpnStatus.disconnected ||
+            vpnService.status == VpnStatus.error) {
           final config = await configService.loadConfig();
-          await vpnService.connect(config);
+          if (config.isPlaceholder) {
+            // Same guard as the Home button: never fake-connect to the
+            // factory placeholder. Bring the window up so the user sees why.
+            await windowManager.show();
+            await windowManager.focus();
+          } else {
+            await vpnService.connect(config);
+          }
         }
         await _updateTrayMenu();
         break;
       case 'exit':
-        // Perform cleanup before exiting
-        await _performCleanup(graceful: true);
-        await windowManager.destroy();
-        exit(0);
+        await _exitApp();
     }
   }
 
+  /// True while onWindowClose is mid-flight (dialog open or exiting). With
+  /// setPreventClose(true) the OS X button keeps re-firing the callback, so
+  /// without this a second click would stack another dialog / race cleanup.
+  bool _handlingClose = false;
+
   @override
   void onWindowClose() async {
+    if (_handlingClose || _exiting) return;
+    _handlingClose = true;
+    try {
+      await _handleWindowClose();
+    } finally {
+      // Cleared on every path that leaves the window open; the exit path
+      // never returns here (exit(0) kills the process first).
+      _handlingClose = false;
+    }
+  }
+
+  Future<void> _handleWindowClose() async {
     final prefs = await SharedPreferences.getInstance();
     // Remembered close action: 'exit' or 'minimize'. Absent → ask each time.
     String? action = prefs.getString('close_action');
@@ -558,9 +574,7 @@ class _MainScreenState extends State<MainScreen>
     }
 
     if (action == 'exit') {
-      await _performCleanup(graceful: true);
-      await windowManager.destroy();
-      exit(0);
+      await _exitApp();
     } else {
       // minimize to tray
       await windowManager.hide();
@@ -575,9 +589,9 @@ class _MainScreenState extends State<MainScreen>
       label: L10n.tr.navHome,
     ),
     NavigationDestination(
-      icon: const Icon(Icons.settings_outlined),
-      selectedIcon: Icon(Icons.settings),
-      label: L10n.tr.navSettings,
+      icon: const Icon(Icons.dns_outlined),
+      selectedIcon: Icon(Icons.dns),
+      label: L10n.tr.navServers,
     ),
     NavigationDestination(
       icon: const Icon(Icons.call_split_outlined),
@@ -590,18 +604,24 @@ class _MainScreenState extends State<MainScreen>
       label: L10n.tr.navLogs,
     ),
     NavigationDestination(
-      icon: const Icon(Icons.cloud_upload_outlined),
-      selectedIcon: Icon(Icons.cloud_upload),
+      icon: const Icon(Icons.rocket_launch_outlined),
+      selectedIcon: Icon(Icons.rocket_launch),
       label: L10n.tr.navServer,
+    ),
+    NavigationDestination(
+      icon: const Icon(Icons.settings_outlined),
+      selectedIcon: Icon(Icons.settings),
+      label: L10n.tr.navSettings,
     ),
   ];
 
   final List<Widget> _screens = const [
     HomeScreen(),
-    SettingsScreen(),
+    ServersScreen(),
     SplitTunnelScreen(),
     LogsScreen(),
     ServerSetupScreen(),
+    SettingsScreen(),
   ];
 
   @override
@@ -635,10 +655,7 @@ class _MainScreenState extends State<MainScreen>
             }).toList(),
           ),
 
-          // Divider
-          const VerticalDivider(thickness: 1, width: 1),
-
-          // Main content
+          // Main content (the tonal rail color separates it; no hard divider)
           Expanded(
             child: IndexedStack(
               index: _selectedIndex,

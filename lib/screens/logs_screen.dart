@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/vpn_service.dart';
+import '../utils/app_snackbar.dart';
+import '../utils/log_level.dart';
 import '../l10n/app_localizations.dart';
 
 class LogsScreen extends StatefulWidget {
@@ -15,6 +17,9 @@ class _LogsScreenState extends State<LogsScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _autoScroll = true;
   VpnService? _vpnService;
+
+  /// null = show everything.
+  LogLevel? _filter;
 
   @override
   void didChangeDependencies() {
@@ -59,16 +64,25 @@ class _LogsScreenState extends State<LogsScreen> {
     // Flutter reuses it without rebuilding every tick.
     return Consumer<VpnService>(
       builder: (context, vpnService, child) {
+        final logs = vpnService.logs;
+        final errorCount =
+            logs.where((l) => logLevelOf(l) == LogLevel.error).length;
+        final warningCount =
+            logs.where((l) => logLevelOf(l) == LogLevel.warning).length;
+
         return Column(
           children: [
             // Header with controls (static parts hoisted via `child`)
             child!,
 
+            // Level filter
+            _buildFilterChips(errorCount, warningCount),
+
             // Logs content
             Expanded(
-              child: vpnService.logs.isEmpty
+              child: logs.isEmpty
                   ? _buildEmptyState()
-                  : _buildLogsList(vpnService.logs),
+                  : _buildLogsList(logs),
             ),
 
             // Footer with info
@@ -91,11 +105,26 @@ class _LogsScreenState extends State<LogsScreen> {
                   ),
                   SizedBox(width: 8),
                   Text(
-                    AppLocalizations.of(context)!.logsTotalEntries(vpnService.logs.length),
+                    AppLocalizations.of(context)!.logsTotalEntries(logs.length),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   ),
+                  if (errorCount > 0) ...[
+                    SizedBox(width: 16),
+                    Icon(
+                      Icons.error_outline,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      '$errorCount errors',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -103,6 +132,34 @@ class _LogsScreenState extends State<LogsScreen> {
         );
       },
       child: _buildHeader(),
+    );
+  }
+
+  Widget _buildFilterChips(int errorCount, int warningCount) {
+    Widget chip(String label, LogLevel? value) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: FilterChip(
+          label: Text(label),
+          selected: _filter == value,
+          showCheckmark: false,
+          visualDensity: VisualDensity.compact,
+          onSelected: (_) => setState(() => _filter = value),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          chip('All', null),
+          chip('Errors ($errorCount)', LogLevel.error),
+          chip('Warnings ($warningCount)', LogLevel.warning),
+        ],
+      ),
     );
   }
 
@@ -210,14 +267,31 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   Widget _buildLogsList(List<String> logs) {
+    final visible = _filter == null
+        ? logs
+        : logs.where((l) => logLevelOf(l) == _filter).toList();
+
+    if (visible.isEmpty) {
+      return Container(
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        alignment: Alignment.center,
+        child: Text(
+          _filter == LogLevel.error ? 'No errors' : 'No warnings',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      );
+    }
+
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.all(16),
-        itemCount: logs.length,
+        itemCount: visible.length,
         itemBuilder: (context, index) {
-          final log = logs[index];
+          final log = visible[index];
           return _buildLogEntry(log, index);
         },
       ),
@@ -225,25 +299,33 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   Widget _buildLogEntry(String log, int index) {
-    // Determine log type by emoji/icon
+    // Color by parsed level (covers raw CLI " ERROR "/" WARN " lines the old
+    // emoji sniffing missed); success/progress emojis keep their accents.
+    final scheme = Theme.of(context).colorScheme;
     Color? textColor;
     IconData? icon;
 
     if (log.contains('✅')) {
       textColor = Colors.green;
       icon = Icons.check_circle_outline;
-    } else if (log.contains('❌')) {
-      textColor = Colors.red;
-      icon = Icons.error_outline;
-    } else if (log.contains('⚠️')) {
-      textColor = Colors.orange;
-      icon = Icons.warning_amber;
-    } else if (log.contains('🔄')) {
-      textColor = Colors.blue;
+    } else if (log.contains('🚀') || log.contains('🔄')) {
+      textColor = scheme.primary;
       icon = Icons.sync;
-    } else if (log.contains('🚀')) {
-      textColor = Colors.purple;
-      icon = Icons.rocket_launch;
+    } else {
+      switch (logLevelOf(log)) {
+        case LogLevel.error:
+          textColor = scheme.error;
+          icon = Icons.error_outline;
+        case LogLevel.warning:
+          textColor = Colors.orange;
+          icon = Icons.warning_amber;
+        case LogLevel.debug:
+          textColor = scheme.outline;
+          icon = null;
+        case LogLevel.info:
+          textColor = null;
+          icon = null;
+      }
     }
 
     return Padding(
@@ -273,13 +355,8 @@ class _LogsScreenState extends State<LogsScreen> {
   void _copyLogs(List<String> logs) {
     final text = logs.join('\n');
     Clipboard.setData(ClipboardData(text: text));
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(AppLocalizations.of(context)!.logsCopied),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    showAppSnackBar(context, AppLocalizations.of(context)!.logsCopied,
+        kind: SnackKind.success);
   }
 
   void _confirmClearLogs(VpnService vpnService) {
@@ -297,11 +374,8 @@ class _LogsScreenState extends State<LogsScreen> {
             onPressed: () {
               vpnService.clearLogs();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(AppLocalizations.of(context)!.logsCleared),
-                ),
-              );
+              showAppSnackBar(
+                  this.context, AppLocalizations.of(this.context)!.logsCleared);
             },
             child: Text(AppLocalizations.of(context)!.commonClear),
           ),

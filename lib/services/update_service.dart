@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Checks GitHub Releases for a newer version and lets the user open the
 /// release page in a browser. Notify-only: no download/install.
@@ -40,7 +41,10 @@ class UpdateService extends ChangeNotifier {
         request.headers.set('User-Agent', 'Trusty');
         request.headers.set('Accept', 'application/vnd.github+json');
         final response = await request.close().timeout(_timeout);
-        if (response.statusCode != 200) return;
+        if (response.statusCode != 200) {
+          await response.drain<void>();
+          return;
+        }
         final body = await response.transform(utf8.decoder).join();
         final release = jsonDecode(body) as Map<String, dynamic>;
         final tag = release['tag_name'] as String? ?? '';
@@ -48,7 +52,11 @@ class UpdateService extends ChangeNotifier {
         if (isNewerVersion(version, current)) {
           _latestVersion = version;
           _releaseUrl = release['html_url'] as String? ?? _releasesPage;
-          _dismissed = false;
+          // A dismissed version stays dismissed across restarts; a NEWER
+          // release shows the banner again.
+          final prefs = await SharedPreferences.getInstance();
+          _dismissed =
+              prefs.getString(_dismissedVersionKey) == version;
           notifyListeners();
         }
       } finally {
@@ -60,9 +68,15 @@ class UpdateService extends ChangeNotifier {
     }
   }
 
+  static const _dismissedVersionKey = 'update_dismissed_version';
+
   void dismiss() {
     _dismissed = true;
     notifyListeners();
+    // Fire-and-forget persistence — the banner must not reappear next launch.
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setString(_dismissedVersionKey, _latestVersion ?? ''),
+    );
   }
 
   Future<void> openReleasePage() async {

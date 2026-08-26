@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/server_config.dart';
-import '../models/vpn_status.dart';
 import '../services/config_service.dart';
-import '../services/vpn_service.dart';
 import '../l10n/app_localizations.dart';
 
+/// Application-level settings only — server management lives on the Servers
+/// screen. Every control here applies immediately (no Save button).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -15,532 +14,148 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _formKey = GlobalKey<FormState>();
-
-  late TextEditingController _hostnameController;
-  late TextEditingController _addressController;
-  late TextEditingController _portController;
-  late TextEditingController _usernameController;
-  late TextEditingController _passwordController;
-  late TextEditingController _dnsController;
-  late TextEditingController _customSniController;
-  late TextEditingController _clientRandomPrefixController;
-
-  bool _hasIpv6 = true;
-  bool _skipVerification = false;
-  bool _antiDpi = false;
-  bool _postQuantumGroupEnabled = true;
-  String _upstreamProtocol = 'http2';
   String _logLevel = 'info';
-  bool _passwordVisible = false;
-  bool _isLoading = true;
   // App behavior on window close: 'ask' (default), 'minimize', or 'exit'.
-  // Stored in SharedPreferences (same key the close dialog persists to), so
-  // the "Remember my choice" checkbox can be changed here later.
   String _closeAction = 'ask';
+  bool _isLoading = true;
 
   late ConfigService _configService;
 
   @override
   void initState() {
     super.initState();
-    _hostnameController = TextEditingController();
-    _addressController = TextEditingController();
-    _portController = TextEditingController();
-    _usernameController = TextEditingController();
-    _passwordController = TextEditingController();
-    _dnsController = TextEditingController();
-    _customSniController = TextEditingController();
-    _clientRandomPrefixController = TextEditingController();
-
     _configService = context.read<ConfigService>();
-    _configService.addListener(_onConfigChanged);
-    _loadConfig();
-    _loadCloseAction();
-  }
-
-  Future<void> _loadCloseAction() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _closeAction = prefs.getString('close_action') ?? 'ask';
-    });
-  }
-
-  void _onConfigChanged() {
-    if (mounted) {
-      _loadConfig();
-    }
-  }
-
-  Future<void> _loadConfig() async {
-    final config = await _configService.loadConfig();
-
-    setState(() {
-      _hostnameController.text = config.hostname;
-      _addressController.text = config.address;
-      _portController.text = config.port.toString();
-      _usernameController.text = config.username;
-      _passwordController.text = config.password;
-      _dnsController.text = config.dns;
-      _customSniController.text = config.customSni;
-      _clientRandomPrefixController.text = config.clientRandomPrefix;
-      _hasIpv6 = config.hasIpv6;
-      _skipVerification = config.skipVerification;
-      _antiDpi = config.antiDpi;
-      _postQuantumGroupEnabled = config.postQuantumGroupEnabled;
-      _upstreamProtocol = config.upstreamProtocol;
-      _logLevel = config.logLevel;
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _saveConfig() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    try {
-      final config = ServerConfig(
-        hostname: _hostnameController.text.trim(),
-        address: _addressController.text.trim(),
-        port: int.parse(_portController.text.trim()),
-        hasIpv6: _hasIpv6,
-        username: _usernameController.text.trim(),
-        password: _passwordController.text,
-        skipVerification: _skipVerification,
-        upstreamProtocol: _upstreamProtocol,
-        antiDpi: _antiDpi,
-        postQuantumGroupEnabled: _postQuantumGroupEnabled,
-        dns: _dnsController.text.trim(),
-        logLevel: _logLevel,
-        customSni: _customSniController.text.trim(),
-        clientRandomPrefix: _clientRandomPrefixController.text.trim(),
-      );
-
-      await _configService.saveConfig(config);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.settingsSaved),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.settingsSaveError(e.toString())),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+    _configService.addListener(_reload);
+    _reload();
   }
 
   @override
   void dispose() {
-    _configService.removeListener(_onConfigChanged);
-    _hostnameController.dispose();
-    _addressController.dispose();
-    _portController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _dnsController.dispose();
-    _customSniController.dispose();
-    _clientRandomPrefixController.dispose();
+    _configService.removeListener(_reload);
     super.dispose();
+  }
+
+  Future<void> _reload() async {
+    final config = await _configService.loadConfig();
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _logLevel = config.logLevel;
+      _closeAction = prefs.getString('close_action') ?? 'ask';
+      _isLoading = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Selector<VpnService, VpnStatus>(
-      selector: (_, vpn) => vpn.status,
-      builder: (context, status, child) {
-        final isConnected = status.isActive;
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        if (_isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Warning when connected
-                if (isConnected)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    margin: const EdgeInsets.only(bottom: 24),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.warning_amber, color: Colors.orange),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            AppLocalizations.of(context)!.settingsWarningConnected,
-                            style: TextStyle(color: Colors.orange),
-                          ),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.tune,
+                          color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Application',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              'Applied immediately',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.outline,
+                                  ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-
-                // Server Section
-                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionServer),
-                _buildTextField(
-                  controller: _hostnameController,
-                  label: AppLocalizations.of(context)!.settingsHostname,
-                  icon: Icons.dns,
-                  enabled: !isConnected,
-                  validator: (value) => value?.isEmpty ?? true
-                      ? AppLocalizations.of(context)!.settingsHostnameError
-                      : null,
-                ),
-                SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: _buildTextField(
-                        controller: _addressController,
-                        label: AppLocalizations.of(context)!.settingsAddress,
-                        icon: Icons.public,
-                        enabled: !isConnected,
-                        validator: (value) => value?.isEmpty ?? true
-                            ? AppLocalizations.of(context)!.settingsAddressError
-                            : null,
-                      ),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: _buildTextField(
-                        controller: _portController,
-                        label: AppLocalizations.of(context)!.settingsPort,
-                        icon: Icons.pin,
-                        enabled: !isConnected,
-                        keyboardType: TextInputType.number,
-                        validator: (value) {
-                          if (value?.isEmpty ?? true) return AppLocalizations.of(context)!.settingsPortErrorEmpty;
-                          final port = int.tryParse(value!);
-                          if (port == null || port < 1 || port > 65535) {
-                            return AppLocalizations.of(context)!.settingsPortErrorInvalid;
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: 24),
-
-                // Authentication Section
-                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionAuth),
-                _buildTextField(
-                  controller: _usernameController,
-                  label: AppLocalizations.of(context)!.settingsUsername,
-                  icon: Icons.person,
-                  enabled: !isConnected,
-                  validator: (value) => value?.isEmpty ?? true
-                      ? AppLocalizations.of(context)!.settingsUsernameError
-                      : null,
-                ),
-                SizedBox(height: 16),
-                _buildTextField(
-                  controller: _passwordController,
-                  label: AppLocalizations.of(context)!.settingsPassword,
-                  icon: Icons.lock,
-                  enabled: !isConnected,
-                  obscureText: !_passwordVisible,
-                  validator: (value) => value?.isEmpty ?? true
-                      ? AppLocalizations.of(context)!.settingsPasswordError
-                      : null,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _passwordVisible ? Icons.visibility_off : Icons.visibility,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _passwordVisible = !_passwordVisible;
-                      });
+                  const SizedBox(height: 20),
+                  _dropdown(
+                    value: _logLevel,
+                    label: AppLocalizations.of(context)!.settingsLogLevel,
+                    icon: Icons.bug_report,
+                    helperText:
+                        'Client log verbosity · takes effect on the next connect',
+                    items: const ['error', 'warn', 'info', 'debug', 'trace'],
+                    onChanged: (value) async {
+                      final v = value ?? 'info';
+                      setState(() => _logLevel = v);
+                      await _configService.setGlobalLogLevel(v);
                     },
                   ),
-                ),
-                SizedBox(height: 16),
-                _buildTextField(
-                  controller: _clientRandomPrefixController,
-                  label: 'Client random prefix (optional)',
-                  icon: Icons.fingerprint,
-                  enabled: !isConnected,
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 6, left: 12),
-                  child: Text(
-                    'For servers with connection filtering. Use the exact '
-                    'hex value from the server\'s rules.toml, in prefix/mask '
-                    'form (e.g. 24503c49/b5797ccf). Leave empty if unused.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
+                  const SizedBox(height: 16),
+                  _dropdown(
+                    value: _closeAction,
+                    label: 'On window close',
+                    icon: Icons.cancel_presentation,
+                    helperText: 'Ask each time, minimize to tray, or exit',
+                    items: const ['ask', 'minimize', 'exit'],
+                    onChanged: (value) async {
+                      final v = value ?? 'ask';
+                      setState(() => _closeAction = v);
+                      final prefs = await SharedPreferences.getInstance();
+                      if (v == 'ask') {
+                        await prefs.remove('close_action');
+                      } else {
+                        await prefs.setString('close_action', v);
+                      }
+                    },
                   ),
-                ),
-
-                SizedBox(height: 24),
-
-                // Network Section
-                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionNetwork),
-                _buildTextField(
-                  controller: _dnsController,
-                  label: AppLocalizations.of(context)!.settingsDns,
-                  icon: Icons.router,
-                  enabled: !isConnected,
-                  validator: (value) => value?.isEmpty ?? true
-                      ? AppLocalizations.of(context)!.settingsDnsError
-                      : null,
-                ),
-                SizedBox(height: 16),
-                _buildDropdown(
-                  value: _upstreamProtocol,
-                  label: AppLocalizations.of(context)!.settingsProtocol,
-                  icon: Icons.settings_ethernet,
-                  enabled: !isConnected,
-                  items: const ['http2', 'http3'],
-                  onChanged: (value) {
-                    setState(() {
-                      _upstreamProtocol = value!;
-                    });
-                  },
-                ),
-                SizedBox(height: 16),
-                _buildDropdown(
-                  value: _logLevel,
-                  label: AppLocalizations.of(context)!.settingsLogLevel,
-                  icon: Icons.bug_report,
-                  enabled: !isConnected,
-                  items: const ['error', 'warn', 'info', 'debug', 'trace'],
-                  onChanged: (value) {
-                    setState(() {
-                      _logLevel = value!;
-                    });
-                  },
-                ),
-
-                SizedBox(height: 24),
-
-                // Advanced Section
-                _buildSectionTitle(AppLocalizations.of(context)!.settingsSectionAdvanced),
-                _buildSwitch(
-                  title: AppLocalizations.of(context)!.settingsIpv6,
-                  value: _hasIpv6,
-                  enabled: !isConnected,
-                  onChanged: (value) {
-                    setState(() {
-                      _hasIpv6 = value;
-                    });
-                  },
-                ),
-                _buildSwitch(
-                  title: AppLocalizations.of(context)!.settingsSkipVerification,
-                  value: _skipVerification,
-                  enabled: !isConnected,
-                  onChanged: (value) {
-                    setState(() {
-                      _skipVerification = value;
-                    });
-                  },
-                ),
-                if (_skipVerification)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.warning_amber,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Disabling certificate verification accepts any server '
-                            'certificate, exposing all tunneled traffic to interception '
-                            '(man-in-the-middle). Only enable this for debugging.',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                _buildSwitch(
-                  title: AppLocalizations.of(context)!.settingsAntiDpi,
-                  value: _antiDpi,
-                  enabled: !isConnected,
-                  onChanged: (value) {
-                    setState(() {
-                      _antiDpi = value;
-                    });
-                  },
-                ),
-                _buildSwitch(
-                  title: AppLocalizations.of(context)!.settingsPostQuantum,
-                  value: _postQuantumGroupEnabled,
-                  enabled: !isConnected,
-                  onChanged: (value) {
-                    setState(() {
-                      _postQuantumGroupEnabled = value;
-                    });
-                  },
-                ),
-                SizedBox(height: 16),
-                _buildTextField(
-                  controller: _customSniController,
-                  label: AppLocalizations.of(context)!.settingsCustomSni,
-                  icon: Icons.security,
-                  enabled: !isConnected,
-                ),
-                SizedBox(height: 16),
-                // App-level setting, applied immediately (not part of the
-                // server config, so the Save button doesn't touch it).
-                _buildDropdown(
-                  value: _closeAction,
-                  label: 'On window close',
-                  icon: Icons.cancel_presentation,
-                  items: const ['ask', 'minimize', 'exit'],
-                  onChanged: (value) async {
-                    final v = value ?? 'ask';
-                    setState(() {
-                      _closeAction = v;
-                    });
-                    final prefs = await SharedPreferences.getInstance();
-                    if (v == 'ask') {
-                      await prefs.remove('close_action');
-                    } else {
-                      await prefs.setString('close_action', v);
-                    }
-                  },
-                ),
-
-                const SizedBox(height: 32),
-
-                // Save Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: isConnected ? null : _saveConfig,
-                    icon: Icon(Icons.save),
-                    label: Text(
-                      AppLocalizations.of(context)!.settingsSave,
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    bool enabled = true,
-    bool obscureText = false,
-    TextInputType? keyboardType,
-    String? Function(String?)? validator,
-    Widget? suffixIcon,
-  }) {
-    return TextFormField(
-      controller: controller,
-      enabled: enabled,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        suffixIcon: suffixIcon,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
         ),
       ),
     );
   }
 
-  Widget _buildDropdown({
+  Widget _dropdown({
     required String value,
     required String label,
     required IconData icon,
     required List<String> items,
     required void Function(String?) onChanged,
-    bool enabled = true,
+    String? helperText,
   }) {
     return DropdownButtonFormField<String>(
       initialValue: value,
       decoration: InputDecoration(
         labelText: label,
+        helperText: helperText,
         prefixIcon: Icon(icon),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
       ),
-      items: items.map((item) {
-        return DropdownMenuItem(
-          value: item,
-          child: Text(item),
-        );
-      }).toList(),
-      onChanged: enabled ? onChanged : null,
-    );
-  }
-
-  Widget _buildSwitch({
-    required String title,
-    required bool value,
-    required void Function(bool) onChanged,
-    bool enabled = true,
-  }) {
-    return SwitchListTile(
-      title: Text(title),
-      value: value,
-      onChanged: enabled ? onChanged : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      items: items
+          .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+          .toList(),
+      onChanged: onChanged,
     );
   }
 }

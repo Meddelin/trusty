@@ -19,23 +19,43 @@ lib/
 │   ├── vpn_status.dart            # Status enum with UI properties (color, icon, text)
 │   └── domain_group.dart          # DomainGroup + DomainGroupsData models
 ├── services/
-│   ├── config_service.dart        # Persistence (SharedPreferences) + TOML file I/O
+│   ├── config_service.dart        # Persistence (SharedPreferences) + server list + routing preset + TOML file I/O
 │   ├── vpn_service.dart           # Process management, connection state, logs
 │   ├── server_setup_service.dart  # Remote VPS deployment via SSH (dartssh2)
 │   └── domain_discovery_service.dart  # HTTP fetch + HTML parse for related domains
 └── screens/
     ├── home_screen.dart           # Connect/disconnect, status display
-    ├── settings_screen.dart       # Server config form
+    ├── servers_screen.dart        # Server list (one-click switch, inline editor) + shared DNS
+    ├── settings_screen.dart       # App-level settings (log level, close action)
     ├── server_setup_screen.dart   # Remote server deployment form + progress
     ├── split_tunnel_screen.dart   # Domain groups, app discovery, log suggestions
     └── logs_screen.dart           # Real-time log viewer
 ```
+
+### UI Conventions
+- Theme: `lib/theme/app_theme.dart` — one builder for both brightnesses (steel-blue seed, flat tonal cards) + `ThemeExtension<StatusColors>`; status colors ONLY via `VpnStatusExtension.colorOf(context)`, red is reserved for errors.
+- Messages: inline strips use `widgets/info_banner.dart` (severity + optional persistent dismissKey); toasts use `utils/app_snackbar.dart` (`showAppSnackBar` — fixed durations, auto-Copy on errors, never queues). Do not hand-roll colored Containers or raw ScaffoldMessenger calls.
+- Log severity: `utils/log_level.dart` parses both emoji markers and raw CLI ` ERROR / WARN ` tokens; the Logs screen filters/colors by it.
+- Desktop layout: screen content is constrained to a 640px column.
 
 ### State Management
 - **Provider** + `ChangeNotifierProvider`
 - `VpnService` — reactive connection state + logs
 - `ServerSetupService` — SSH deployment state + logs
 - `ConfigService` — plain service injected via `Provider`
+
+### Server List & Persistence Keys
+Multiple servers are stored in SharedPreferences; `server_config` remains the single "active config" contract all screens read/write:
+- `server_config` — active config JSON (its `id` links it to the list entry)
+- `server_list` — array of all server entries (passwords never stored here)
+- `active_server_id` — id of the active entry
+- Passwords: OS keystore, one `vpn_password_<id>` key per server (legacy `vpn_password` kept as a read fallback / downgrade safety)
+- `routing_lists` (JSON array of `RoutingList`) + `client/routing_lists/<id>.lst` caches — ready-made routing lists (built-in blocked-in-Russia preset + user URL/file lists), merged into exclusions at TOML-write time per each list's `appliesTo` mode; URL lists auto-refresh at connect when older than 24h (8s budget). Legacy `routing_preset_*` keys migrate automatically.
+- `app_dns`, `app_log_level` — app-global settings (seeded from the active config once; server entries may carry stale copies that are ignored)
+- `deploy_form_config`, `deploy_last_result` — non-secret VPS-deploy form defaults and the persisted outcome of the last successful deploy (incl. generated client_random_prefix)
+- `banner_dismissed_*`, `update_dismissed_version` — persistent dismissals of InfoBanners / the update banner
+
+`saveConfig()` upserts the active entry by id and makes it active; `switchServer()` swaps only connection fields, preserving app-wide settings (DNS, log level, VPN mode, split tunneling). The one-time migration wraps a legacy single config into the list on first access.
 
 ### Connection Flow
 1. User clicks Connect → `HomeScreen._handleButtonPress()`
@@ -64,7 +84,7 @@ lib/
 | Client dir | `Directory.current.path/client/` | Navigate up from `.app` bundle |
 | TUN driver | Wintun (wintun.dll, 5s release wait) | Native utun + setuid via osascript (one-time) |
 | Tray icon | `.ico` via `Platform.resolvedExecutable` path | `.png` via `.app/Contents/Frameworks/...` |
-| App discovery | Program Files, AppData → `.exe` | `/Applications` → `.app` bundles |
+| App discovery | Registry Uninstall hives (= Settings → Apps) + Store apps via `Get-AppxPackage`/AppxManifest; icons via `ExtractAssociatedIcon` batch into temp cache; running processes via `tasklist` (search-only) | `/Applications` + `/System/Applications` → `.app` bundles, running processes via `ps` |
 
 Key platform checks in code:
 - `config_service.dart`: `getClientDirectory()`, `getTrustTunnelExecutable()`
@@ -113,9 +133,11 @@ Both download the **latest** CLI from [TrustTunnelClient releases](https://githu
 
 ### Split Tunnel Domain Groups
 - GUI-only grouping, TOML stays flat `exclusions = [...]`
-- Auto-discovery: HTTP GET + HTML parse
+- All user input goes through `normalizeExclusion()` / `classifyExclusion()` (`utils/exclusion_parser.dart`): URL → host, port/path stripping, domain/IP/CIDR validation (unicode domains supported); invalid input is rejected in the UI
+- Auto-discovery: HTTP GET + HTML parse — opt-in via a "Find related" snackbar action after adding a domain (not a blocking dialog)
 - Background log monitoring: `VpnService._logObservers` feed suggestions
 - Groups flatten via `DomainGroupsData.flattenDomains()`
+- The screen stays editable while connected; changes apply on next connect (config TOML is written at connect time)
 
 ## Dependencies
 
@@ -134,7 +156,7 @@ Both download the **latest** CLI from [TrustTunnelClient releases](https://githu
 
 - [ ] macOS: no code signing (Gatekeeper bypass required on first launch)
 - [ ] No auto-download CLI at runtime
-- [ ] No auto-update of geoip/geosite exclusion lists
+- [ ] Routing preset updates are manual (refresh button); no scheduled auto-update
 - [ ] Limited tests (model/parser unit tests; no widget/integration coverage)
 - [ ] SOCKS5 listener not in GUI (TUN only)
 - [ ] No auto-reconnect

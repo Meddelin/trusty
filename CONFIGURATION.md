@@ -59,7 +59,7 @@ Click **Install Server** to start the automated deployment. The process:
 6. Sets up and starts a systemd service
 7. Verifies the service is running
 
-After successful installation, click **Apply Client Settings** to automatically fill in the connection settings.
+After successful installation, click **Apply Client Settings** — the deployed server is added to your server list (or the entry with the same domain is updated) and becomes the active one. Existing servers in the list are never overwritten.
 
 ### Server Configuration Files
 
@@ -122,6 +122,16 @@ action = "deny"
 For advanced server configuration, see the [TrustTunnel Server Documentation](https://github.com/TrustTunnel/TrustTunnel/blob/master/CONFIGURATION.md).
 
 ## Server Configuration
+
+### Multiple Servers
+
+Trusty keeps a list of servers on the dedicated **Servers** tab: one card per server. Clicking a card makes that server active (one click — no dropdowns); the pencil opens an inline editor with all connection fields; **Add server** opens a dialog; Delete lives inside the editor. The Home screen additionally shows a quick switcher above the Connect button when more than one server is saved. **Shared network settings** (DNS) sit at the bottom of the Servers tab — they apply to every server. App-level options (log level, close behavior) live on the separate **Settings** tab.
+
+- **Switching** replaces only the connection fields (hostname, IP, port, credentials, protocol tweaks like Anti-DPI/SNI/prefix). App-wide settings — DNS, log level, VPN mode and all split-tunneling lists — stay as they are.
+- **Adding** opens a dialog — nothing is saved until you confirm real values.
+- **Deleting** removes the entry and its stored password (the last remaining server can't be deleted).
+- Each server's password is stored separately in the OS keystore.
+- **Apply Client Settings** after a server deployment adds the deployed server as a new entry (or updates the entry with the same domain) and makes it active — it never overwrites your other servers.
 
 ### Hostname
 
@@ -211,7 +221,11 @@ It is not a secret that protects your traffic (TLS already does that) — it's a
 
 ### DNS Server
 
-DNS resolver to use for domain name resolution through the VPN.
+DNS resolver(s) to use for domain name resolution through the VPN. You can specify **several upstreams separated by commas** — e.g. a DoH resolver with a plain-IP fallback:
+
+```
+https://dns.adguard-dns.com/dns-query, 8.8.8.8
+```
 
 **Format options:**
 
@@ -348,11 +362,30 @@ Split tunneling allows selective routing of traffic through the VPN.
 - All other traffic uses direct connection
 - Use this to VPN only specific apps/sites while keeping others fast
 
+### Ready-Made Routing Lists
+
+The Split Tunnel screen has a **Routing lists** section — sets of domains/IPs/CIDRs merged into the exclusions at connect time, kept separate from your own entries:
+
+- **Built-in list "Default"** (similar in spirit to [roscomvpn-routing](https://github.com/hydraponique/roscomvpn-routing)) — the maintained [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) lists of sites blocked in Russia (`Russia/inside-raw.lst` + Telegram/Discord subnets, ~1200 entries).
+- **Your own lists** via **Add list**: a raw URL (e.g. a GitHub raw link, several URLs allowed) or a local file — plain text, one domain/IP/CIDR per line, `#` comments allowed. The **Check** step shows "Found N valid entries (M skipped)" before anything is saved.
+
+Behavior:
+- **Auto-update**: URL lists older than 24 hours are refreshed automatically when you connect (with a hard 8-second budget so connect never hangs; offline falls back to the cached copy, and a vanished cache file forces a re-download). The refresh button updates a list manually at any time.
+- Each list applies in **Selective mode** (entries are routed *through* the VPN), **General mode** (entries *bypass* the VPN) or both — set per list in its ⋮ menu.
+- Entries are validated (invalid lines are skipped) with size caps (5 MB / 100 000 entries), cached under `client/routing_lists/<id>.lst`.
+- A failed update marks the list with the error; the last good cache keeps working.
+
 ### Exclusions/Inclusions
 
 Add domains, IP addresses, or applications to exclude (General mode) or include (Selective mode).
 
-Add entries one at a time with **+**, or click the **paste-list** button to import many at once — paste a block with one entry per line (commas and spaces also work). Pasted IPs, CIDRs and domains are added directly; duplicates are ignored.
+Add entries one at a time with **+**, or click the **paste-list** button to import many at once — paste a block with one entry per line (commas and spaces also work). Duplicates are ignored.
+
+Input is normalized automatically: you can paste a full URL (`https://user@VK.com:443/feed` becomes `vk.com`), a bare domain, an IP, an IPv6 in brackets, or a CIDR range. Ports, paths and schemes are stripped; entries that are not a valid domain/IP/CIDR are rejected with a message instead of silently landing in the config (a typo like `10.0.0.0/99` is an error, not a truncated entry).
+
+After adding a domain, a snackbar offers **Find related** — the optional discovery that scans the site and suggests its CDN/API domains as a group. It no longer blocks every add with a dialog.
+
+The whole screen stays editable while the VPN is connected: changes are saved immediately and take effect the next time you connect.
 
 **Domain Examples:**
 
@@ -368,10 +401,14 @@ netflix.com           # Matches netflix.com and www.netflix.com
 192.168.1.1           # Single IP
 10.0.0.0/8            # Entire 10.x.x.x network
 2001:db8::/32         # IPv6 CIDR range
-[2001:db8::1]:443     # IPv6 with specific port
+2001:db8::1           # Single IPv6 ([2001:db8::1]:443 is accepted too — the port is stripped)
 ```
 
 **Application Examples:**
+
+The Apps tab lists installed applications with their icons and checkboxes (selected ones are shown first). On Windows the list mirrors **Settings → Apps → Installed apps** (registry Uninstall entries) plus **Microsoft Store apps** (Apple Music, WhatsApp, …); on macOS it scans `/Applications` and `/System/Applications`. **Running processes** appear in search results only — if an app isn't listed, start it, type its name (or press refresh first), then pick the entry labeled "running now" with the exact process name.
+
+As a last resort, type a process name into the search field and press **+** — on Windows a bare name gets `.exe` appended automatically. Manually added names stay visible at the top of the list.
 
 Windows:
 ```

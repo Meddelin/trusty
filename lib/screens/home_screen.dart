@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +6,9 @@ import '../models/vpn_status.dart';
 import '../services/vpn_service.dart';
 import '../services/config_service.dart';
 import '../services/update_service.dart';
+import '../theme/app_theme.dart';
+import '../utils/app_snackbar.dart';
+import '../widgets/info_banner.dart';
 import '../l10n/app_localizations.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -27,25 +31,9 @@ class HomeScreen extends StatelessWidget {
                 // Update banner
                 _buildUpdateBanner(context),
 
-                // Status Icon
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: status.color.withValues(alpha: 0.1),
-                    border: Border.all(
-                      color: status.color,
-                      width: 4,
-                    ),
-                  ),
-                  child: Icon(
-                    status.icon,
-                    size: 80,
-                    color: status.color,
-                  ),
-                ),
+                // Status hero: breathing ring while connected, rotating
+                // icon while connecting.
+                _StatusHero(status: status),
 
                 const SizedBox(height: 32),
 
@@ -53,12 +41,23 @@ class HomeScreen extends StatelessWidget {
                 Text(
                   status.displayText,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: status.color,
+                        color: status.colorOf(context),
                         fontWeight: FontWeight.bold,
                       ),
                 ),
 
-                const SizedBox(height: 48),
+                if (status == VpnStatus.connected &&
+                    vpnService.connectedAt != null) ...[
+                  const SizedBox(height: 4),
+                  _ConnectionTimer(since: vpnService.connectedAt!),
+                ],
+
+                const SizedBox(height: 32),
+
+                // Quick server switcher (hidden when only one server is saved)
+                _buildServerSwitcher(context, status),
+
+                const SizedBox(height: 16),
 
                 // Connect/Disconnect Button
                 _buildMainButton(context, vpnService, status),
@@ -67,24 +66,12 @@ class HomeScreen extends StatelessWidget {
 
                 // Error Message
                 if (status == VpnStatus.error && vpnService.errorMessage != null)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.error_outline, color: Colors.red),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            vpnService.errorMessage!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      ],
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    child: InfoBanner(
+                      severity: BannerSeverity.error,
+                      title: 'Connection failed',
+                      message: vpnService.errorMessage!,
                     ),
                   ),
 
@@ -105,36 +92,122 @@ class HomeScreen extends StatelessWidget {
     return Consumer<UpdateService>(
       builder: (context, updates, _) {
         if (!updates.updateAvailable) return const SizedBox.shrink();
-        final colors = Theme.of(context).colorScheme;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 24),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: colors.primaryContainer,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.system_update_alt, color: colors.onPrimaryContainer),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(
-                  AppLocalizations.of(context)!
-                      .homeUpdateAvailable(updates.latestVersion!),
-                  style: TextStyle(color: colors.onPrimaryContainer),
-                ),
-              ),
-              const SizedBox(width: 8),
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: InfoBanner(
+            // Keyed by version so a NEW release rebuilds the banner even if
+            // the widget stays alive in the IndexedStack.
+            key: ValueKey(updates.latestVersion),
+            severity: BannerSeverity.info,
+            message: AppLocalizations.of(context)!
+                .homeUpdateAvailable(updates.latestVersion!),
+            margin: const EdgeInsets.only(bottom: 24),
+            actions: [
               TextButton(
                 onPressed: updates.openReleasePage,
                 child: Text(AppLocalizations.of(context)!.homeUpdateDownload),
               ),
-              IconButton(
-                icon: Icon(Icons.close, size: 18, color: colors.onPrimaryContainer),
-                onPressed: updates.dismiss,
-              ),
             ],
+            onDismiss: updates.dismiss,
+          ),
+        );
+      },
+    );
+  }
+
+  /// Dropdown to switch the active server without opening Settings; with a
+  /// single saved server it shows a static tile naming it. Reads the
+  /// synchronous server cache — no per-rebuild futures.
+  Widget _buildServerSwitcher(BuildContext context, VpnStatus status) {
+    return Consumer<ConfigService>(
+      builder: (context, configService, _) {
+        final servers = configService.serversCache;
+        final activeId = configService.activeServerIdCache;
+        if (servers.isEmpty) {
+          // Kick the one-time initial load; the cache fill notifies and
+          // this Consumer rebuilds.
+          configService.loadServers();
+          return const SizedBox.shrink();
+        }
+        final hasActive = servers.any((s) => s.id == activeId);
+
+        // Single server: show WHICH server this is, without a dropdown.
+        if (servers.length < 2) {
+          final s = servers.first;
+          return Container(
+            width: 280,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.dns,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    s.displayLabel.isEmpty ? '(unnamed)' : s.displayLabel,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Container(
+          width: 280,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: DropdownButton<String>(
+            value: hasActive ? activeId : null,
+            isExpanded: true,
+            underline: const SizedBox.shrink(),
+            borderRadius: BorderRadius.circular(12),
+            items: servers
+                .map(
+                  (s) => DropdownMenuItem(
+                    value: s.id,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.dns,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            s.displayLabel.isEmpty
+                                ? '(unnamed)'
+                                : s.displayLabel,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: status.isActive
+                ? null
+                : (id) {
+                    if (id != null && id != activeId) {
+                      configService.switchServer(id);
+                    }
+                  },
           ),
         );
       },
@@ -149,6 +222,18 @@ class HomeScreen extends StatelessWidget {
     final isLoading = status == VpnStatus.connecting ||
         status == VpnStatus.disconnecting;
 
+    // Connect is the green CTA; Disconnect is a calm tonal button (red is
+    // reserved for errors). Colors come from the theme's status tokens.
+    final scheme = Theme.of(context).colorScheme;
+    final tokens = Theme.of(context).extension<StatusColors>() ??
+        StatusColors.light;
+    final isConnectedish =
+        status == VpnStatus.connected || status == VpnStatus.disconnecting;
+    final buttonColor =
+        isConnectedish ? scheme.secondaryContainer : tokens.connected;
+    final onButtonColor =
+        isConnectedish ? scheme.onSecondaryContainer : Colors.white;
+
     return SizedBox(
       width: 280,
       height: 64,
@@ -157,94 +242,80 @@ class HomeScreen extends StatelessWidget {
             ? null
             : () => _handleButtonPress(context, vpnService, status),
         style: ElevatedButton.styleFrom(
-          backgroundColor:
-              status == VpnStatus.connected ? Colors.red : Colors.green,
-          foregroundColor: Colors.white,
+          backgroundColor: buttonColor,
+          foregroundColor: onButtonColor,
+          // Keep the accent color while disabled (connecting/disconnecting)
+          // instead of flashing the default grey between states.
+          disabledBackgroundColor: buttonColor.withValues(alpha: 0.7),
+          disabledForegroundColor: onButtonColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(32),
           ),
-          elevation: 4,
+          elevation: 0,
         ),
-        child: isLoading
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: isLoading
+              ? Row(
+                  key: const ValueKey('loading'),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(onButtonColor),
+                      ),
                     ),
-                  ),
-                  SizedBox(width: 12),
-                  Text(
-                    AppLocalizations.of(context)!.homePleaseWait,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    status == VpnStatus.connected
-                        ? Icons.stop_circle_outlined
-                        : Icons.play_circle_outline,
-                    size: 28,
-                  ),
-                  SizedBox(width: 12),
-                  Text(
-                    status == VpnStatus.connected
-                        ? AppLocalizations.of(context)!.homeDisconnect
-                        : AppLocalizations.of(context)!.homeConnect,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    SizedBox(width: 12),
+                    Text(
+                      AppLocalizations.of(context)!.homePleaseWait,
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                )
+              : Row(
+                  key: ValueKey(status == VpnStatus.connected),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      status == VpnStatus.connected
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline,
+                      size: 28,
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      status == VpnStatus.connected
+                          ? AppLocalizations.of(context)!.homeDisconnect
+                          : AppLocalizations.of(context)!.homeConnect,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
 
   Widget _buildInfoCard(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
-              SizedBox(width: 12),
-              Text(
-                AppLocalizations.of(context)!.homeInfoTitle,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-            ],
-          ),
-          SizedBox(height: 12),
-          Text(
+    // First-run onboarding: dismissible, stays hidden forever once closed.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 480),
+      child: InfoBanner(
+        severity: BannerSeverity.info,
+        title: AppLocalizations.of(context)!.homeInfoTitle,
+        message:
             '• ${AppLocalizations.of(context)!.homeInfoLine1}\n'
             '• ${Platform.isWindows ? AppLocalizations.of(context)!.homeInfoLineClientWindows : AppLocalizations.of(context)!.homeInfoLineClientOther}\n'
             '• ${AppLocalizations.of(context)!.homeInfoLine3}',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
-            ),
-          ),
-        ],
+        dismissKey: 'home_intro',
       ),
     );
   }
@@ -254,29 +325,186 @@ class HomeScreen extends StatelessWidget {
     VpnService vpnService,
     VpnStatus status,
   ) async {
-    try {
-      if (status == VpnStatus.connected) {
-        await vpnService.disconnect();
-      } else {
-        // Load config and connect
-        final configService = context.read<ConfigService>();
-        final config = await configService.loadConfig();
+    if (status == VpnStatus.connected) {
+      await vpnService.disconnect();
+      return;
+    }
 
-        // Debug: verify config was loaded
-        debugPrint('HomeScreen - loaded config: hostname=${config.hostname}, address=${config.address}');
+    final configService = context.read<ConfigService>();
+    final config = await configService.loadConfig();
 
-        await vpnService.connect(config);
-      }
-    } catch (e) {
+    // Refuse to "connect" to the factory placeholder — it would look green
+    // while tunneling nothing.
+    if (config.isPlaceholder) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.homeError(e.toString())),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+        showAppSnackBar(
+          context,
+          'Add your server details in Settings before connecting',
+          kind: SnackKind.warning,
         );
       }
+      return;
     }
+
+    // Errors surface via VpnStatus.error + the error card on this screen.
+    await vpnService.connect(config);
+  }
+}
+
+/// The 160px status circle with motion where it matters: a breathing outer
+/// ring while connected, a rotating sync icon while connecting, and an
+/// animated icon/color switch on every state change. No packages — one
+/// AnimationController.
+class _StatusHero extends StatefulWidget {
+  final VpnStatus status;
+
+  const _StatusHero({required this.status});
+
+  @override
+  State<_StatusHero> createState() => _StatusHeroState();
+}
+
+class _StatusHeroState extends State<_StatusHero>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StatusHero oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.status != widget.status) _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    switch (widget.status) {
+      case VpnStatus.connected:
+        _controller.repeat(reverse: true); // breathing ring
+      case VpnStatus.connecting:
+      case VpnStatus.disconnecting:
+        _controller.repeat(); // rotation
+      case VpnStatus.disconnected:
+      case VpnStatus.error:
+        _controller.stop();
+        _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.status.colorOf(context);
+    final spinning = widget.status == VpnStatus.connecting ||
+        widget.status == VpnStatus.disconnecting;
+    final breathing = widget.status == VpnStatus.connected;
+
+    Widget icon = Icon(
+      widget.status.icon,
+      key: ValueKey(widget.status.icon),
+      size: 80,
+      color: color,
+    );
+    if (spinning) {
+      icon = RotationTransition(turns: _controller, child: icon);
+    }
+
+    return SizedBox(
+      width: 190,
+      height: 190,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (breathing)
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final t = _controller.value;
+                return Container(
+                  width: 160 + 24 * t,
+                  height: 160 + 24 * t,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: color.withValues(alpha: 0.35 * (1 - t)),
+                      width: 3,
+                    ),
+                  ),
+                );
+              },
+            ),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: 160,
+            height: 160,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.1),
+              border: Border.all(color: color, width: 4),
+            ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: icon,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ticking "how long have I been connected" line.
+class _ConnectionTimer extends StatefulWidget {
+  final DateTime since;
+
+  const _ConnectionTimer({required this.since});
+
+  @override
+  State<_ConnectionTimer> createState() => _ConnectionTimerState();
+}
+
+class _ConnectionTimerState extends State<_ConnectionTimer> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = DateTime.now().difference(widget.since);
+    String two(int n) => n.toString().padLeft(2, '0');
+    final text = d.inHours > 0
+        ? '${d.inHours}:${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}'
+        : '${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
+    return Text(
+      text,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.outline,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+    );
   }
 }

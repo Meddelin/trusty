@@ -8,6 +8,12 @@ enum VpnMode {
 
 /// Server configuration model for Trusty VPN
 class ServerConfig {
+  /// Stable identity of the server entry in the saved server list.
+  /// Empty only for transient objects; assigned on save/migration.
+  final String id;
+
+  /// Optional user-given display name; [displayLabel] falls back to hostname.
+  final String name;
   final String hostname;
   final String address;
   final int port;
@@ -29,6 +35,8 @@ class ServerConfig {
   final List<String> splitTunnelApps;
 
   ServerConfig({
+    this.id = '',
+    this.name = '',
     required this.hostname,
     required this.address,
     this.port = 443,
@@ -75,6 +83,8 @@ class ServerConfig {
   /// Convert to JSON for storage
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
+      'name': name,
       'hostname': hostname,
       'address': address,
       'port': port,
@@ -110,6 +120,8 @@ class ServerConfig {
     final postQuantumGroupEnabled = json['postQuantumGroupEnabled'] as bool? ?? true;
 
     return ServerConfig(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
       hostname: hostname,
       address: address,
       port: json['port'] as int? ?? 443,
@@ -166,10 +178,12 @@ class ServerConfig {
       throw Exception('Username cannot be empty');
     }
 
-    // Generate DNS upstreams list if specified
-    final dnsValue = dns;
-    final dnsUpstreams =
-        dnsValue.isNotEmpty ? '["${_tomlEscape(dnsValue)}"]' : '[]';
+    // Generate DNS upstreams list. The field accepts several upstreams
+    // separated by commas/whitespace (e.g. plain IP + DoH fallback).
+    final upstreams = dnsUpstreamList;
+    final dnsUpstreams = upstreams.isEmpty
+        ? '[]'
+        : '[${upstreams.map((u) => '"${_tomlEscape(u)}"').join(', ')}]';
 
     // Generate exclusions list from domains and apps
     final domains = splitTunnelDomains;
@@ -289,8 +303,25 @@ change_system_dns = true
 ''';
   }
 
+  /// What lists and dropdowns show for this server.
+  String get displayLabel => name.isNotEmpty ? name : hostname;
+
+  /// True while the config still carries the factory placeholder values —
+  /// connecting with these would "succeed" against 127.0.0.1 and show a
+  /// green circle with no tunnel.
+  bool get isPlaceholder =>
+      hostname == 'vpn.example.com' || username == 'your-username';
+
+  /// DNS upstreams parsed from the [dns] field (comma/whitespace separated).
+  List<String> get dnsUpstreamList => dns
+      .split(RegExp(r'[\s,]+'))
+      .where((s) => s.isNotEmpty)
+      .toList();
+
   /// Create a copy with updated fields
   ServerConfig copyWith({
+    String? id,
+    String? name,
     String? hostname,
     String? address,
     int? port,
@@ -310,6 +341,8 @@ change_system_dns = true
     List<String>? splitTunnelApps,
   }) {
     return ServerConfig(
+      id: id ?? this.id,
+      name: name ?? this.name,
       hostname: hostname ?? this.hostname,
       address: address ?? this.address,
       port: port ?? this.port,

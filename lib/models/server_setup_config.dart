@@ -174,3 +174,57 @@ class ServerSetupConfig {
         'private_key_path = "/etc/letsencrypt/live/$d/privkey.pem"\n';
   }
 }
+
+/// The non-secret outcome of a successful deploy, persisted so "Apply Client
+/// Settings" still works after an app restart. Losing the generated
+/// client_random_prefix between install and apply would permanently lock the
+/// user out of a filtering-enabled server, so it must survive restarts.
+/// Passwords are deliberately excluded — never store secrets.
+class ServerSetupResult {
+  final String host;
+  final String domain;
+  final int listenPort;
+  final String vpnUsername;
+  final String clientRandomPrefix;
+
+  const ServerSetupResult({
+    required this.host,
+    required this.domain,
+    required this.listenPort,
+    required this.vpnUsername,
+    this.clientRandomPrefix = '',
+  });
+
+  /// Snapshot the deployed values from the install config. Taken AFTER the
+  /// install ran, so it reflects reality (e.g. an auto-adjusted listen port,
+  /// the generated prefix) rather than what the user typed.
+  factory ServerSetupResult.fromConfig(ServerSetupConfig config) {
+    return ServerSetupResult(
+      host: config.host,
+      domain: config.domain,
+      listenPort: config.listenPort,
+      vpnUsername: config.vpnUsername,
+      clientRandomPrefix: config.clientRandomPrefix,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'host': host,
+      'domain': domain,
+      'listenPort': listenPort,
+      'vpnUsername': vpnUsername,
+      'clientRandomPrefix': clientRandomPrefix,
+    };
+  }
+
+  factory ServerSetupResult.fromJson(Map<String, dynamic> json) {
+    return ServerSetupResult(
+      host: json['host'] as String? ?? '',
+      domain: json['domain'] as String? ?? '',
+      listenPort: json['listenPort'] as int? ?? 443,
+      vpnUsername: json['vpnUsername'] as String? ?? '',
+      clientRandomPrefix: json['clientRandomPrefix'] as String? ?? '',
+    );
+  }
+}

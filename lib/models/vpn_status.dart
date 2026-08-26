@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import '../utils/localization_helper.dart';
 
 /// VPN connection status
@@ -27,19 +28,21 @@ extension VpnStatusExtension on VpnStatus {
     }
   }
 
-  /// Get status color
-  Color get color {
+  /// Status color from the theme's [StatusColors] tokens — correct in both
+  /// light and dark mode (never raw Material-500 constants).
+  Color colorOf(BuildContext context) {
+    final tokens = Theme.of(context).extension<StatusColors>() ??
+        StatusColors.light;
     switch (this) {
       case VpnStatus.disconnected:
-        return Colors.grey;
+        return tokens.idle;
       case VpnStatus.connecting:
-        return Colors.orange;
-      case VpnStatus.connected:
-        return Colors.green;
       case VpnStatus.disconnecting:
-        return Colors.orange;
+        return tokens.connecting;
+      case VpnStatus.connected:
+        return tokens.connected;
       case VpnStatus.error:
-        return Colors.red;
+        return tokens.error;
     }
   }
 
