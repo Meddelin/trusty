@@ -581,6 +581,29 @@ class ConfigService extends ChangeNotifier {
     }
   }
 
+  static const List<String> _cliBinaryNames = [
+    'trusttunnel_client.exe',
+    'trusttunnel.exe',
+    'trusttunnel_client',
+    'trusttunnel',
+  ];
+
+  /// Pick the directory that holds client/: the executable's directory when
+  /// the CLI binary is installed there (packaged layout — works from any
+  /// launch CWD), otherwise the current directory (`flutter run` and tests,
+  /// where client/ lives in or gets created under the CWD). Checking for the
+  /// binary rather than the bare folder keeps a stray empty client/ dir next
+  /// to the executable from hijacking the lookup.
+  static String resolveClientBaseDir({
+    required String exeDir,
+    required String currentDir,
+    required bool Function(String path) fileExists,
+  }) {
+    final installed = _cliBinaryNames
+        .any((name) => fileExists(p.join(exeDir, 'client', name)));
+    return installed ? exeDir : currentDir;
+  }
+
   /// Get path to client directory
   Future<String> getClientDirectory() async {
     String baseDir;
@@ -596,7 +619,11 @@ class ConfigService extends ChangeNotifier {
       }
       baseDir = dir.path;
     } else {
-      baseDir = Directory.current.path;
+      baseDir = resolveClientBaseDir(
+        exeDir: File(Platform.resolvedExecutable).parent.path,
+        currentDir: Directory.current.path,
+        fileExists: (path) => File(path).existsSync(),
+      );
     }
 
     final clientDir = p.join(baseDir, 'client');
@@ -617,11 +644,15 @@ class ConfigService extends ChangeNotifier {
     if (Platform.isWindows) {
       final clientExe = p.join(clientDir, 'trusttunnel_client.exe');
       if (await File(clientExe).exists()) return clientExe;
-      return p.join(clientDir, 'trusttunnel.exe');
+      final legacyExe = p.join(clientDir, 'trusttunnel.exe');
+      if (await File(legacyExe).exists()) return legacyExe;
+      return clientExe;
     } else {
       final clientBin = p.join(clientDir, 'trusttunnel_client');
       if (await File(clientBin).exists()) return clientBin;
-      return p.join(clientDir, 'trusttunnel');
+      final legacyBin = p.join(clientDir, 'trusttunnel');
+      if (await File(legacyBin).exists()) return legacyBin;
+      return clientBin;
     }
   }
 
