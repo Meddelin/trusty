@@ -76,6 +76,11 @@ class VpnService extends ChangeNotifier {
     required bool windows,
     required bool socksMode,
   }) {
+    // Certificate failures happen in both TUN and SOCKS5 mode on every
+    // platform, and the CLI exits with code 0 after them — check first.
+    if (lastLogsLower.contains('failed to verify certificate')) {
+      return StartupFailure.certificateInvalid;
+    }
     if (socksMode) return StartupFailure.generic;
     if (windows) {
       final isAccessDenied = lastLogsLower.contains('access is denied') ||
@@ -335,22 +340,37 @@ class VpnService extends ChangeNotifier {
         _addLog('🛑 Process exited with code: $exitCode');
         _process = null;
 
+        // Classify regardless of the exit code: the CLI exits with code 0
+        // after a fatal certificate-verification failure.
+        final tail = Platform.isWindows ? 10 : 15;
+        final logsToCheck =
+            _logs.length > tail ? _logs.sublist(_logs.length - tail) : _logs;
+        final lastLogs = logsToCheck.join('\n').toLowerCase();
+
+        if (kDebugMode) {
+          print('Exit code check: exitCode=$exitCode, logs count=${_logs.length}');
+          print('Last $tail logs:\n${logsToCheck.join('\n')}');
+        }
+
+        final failure = classifyStartupFailure(
+          lastLogs,
+          windows: Platform.isWindows,
+          socksMode: socksMode,
+        );
+
+        if (failure == StartupFailure.certificateInvalid) {
+          _errorMessage =
+              'Server certificate verification failed (expired or untrusted).';
+          _addLog('🔐 The server\'s TLS certificate did not pass validation — '
+              'most often it has expired.');
+          _addLog('💡 Renew the certificate on the server (re-run the '
+              'certificate step of the deployment, or renew it over SSH). '
+              'As a temporary, insecure workaround you can enable "Skip '
+              'certificate verification" in the server settings.');
+          throw Exception('Server certificate verification failed');
+        }
+
         if (exitCode != 0) {
-          final tail = Platform.isWindows ? 10 : 15;
-          final logsToCheck =
-              _logs.length > tail ? _logs.sublist(_logs.length - tail) : _logs;
-          final lastLogs = logsToCheck.join('\n').toLowerCase();
-
-          if (kDebugMode) {
-            print('Exit code check: exitCode=$exitCode, logs count=${_logs.length}');
-            print('Last $tail logs:\n${logsToCheck.join('\n')}');
-          }
-
-          final failure = classifyStartupFailure(
-            lastLogs,
-            windows: Platform.isWindows,
-            socksMode: socksMode,
-          );
           switch (failure) {
             case StartupFailure.accessDenied:
               _errorMessage = 'Access denied. Run the application as administrator.';
@@ -368,6 +388,7 @@ class VpnService extends ChangeNotifier {
               _addLog('🔒 TUN permission was reset (e.g. after an app update). Reconnecting will show the password dialog again.');
               await Future.delayed(const Duration(seconds: 2));
             case StartupFailure.tunPermissionLost:
+            case StartupFailure.certificateInvalid: // handled above
             case StartupFailure.generic:
               _errorMessage = 'Process exited with error (code: $exitCode)';
               await Future.delayed(Platform.isWindows
@@ -760,7 +781,13 @@ class VpnService extends ChangeNotifier {
 
 /// Actionable kinds of an immediate CLI startup failure
 /// (see [VpnService.classifyStartupFailure]).
-enum StartupFailure { accessDenied, wintunBusy, tunPermissionLost, generic }
+enum StartupFailure {
+  accessDenied,
+  wintunBusy,
+  tunPermissionLost,
+  certificateInvalid,
+  generic,
+}
 
 /// Which arm of the connect() readiness race won.
 enum _RaceOutcome { connected, exited, timeout }

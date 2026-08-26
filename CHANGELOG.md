@@ -42,6 +42,7 @@
 ### Fixed
 - Saving connection settings no longer resets the VPN mode and split-tunneling lists (the Settings form previously rebuilt the config from scratch).
 - The `client/` folder (CLI, wintun, configs) is now looked up next to `Trusty.exe` instead of the launch working directory — starting the app from a shortcut, Explorer or a terminal with any CWD works; `flutter run` from the repo root still finds the repo's `client/`. A missing CLI error now always names `trusttunnel_client.exe`.
+- A failed server-certificate check (e.g. an expired Let's Encrypt certificate) is now reported as such, with renewal hints — previously the CLI exited with code 0 and the app showed only a cryptic "Process exited immediately after start".
 
 ## [0.3.4] - 2026-07-18
 

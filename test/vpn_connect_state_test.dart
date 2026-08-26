@@ -33,6 +33,39 @@ void main() {
   });
 
   group('classifyStartupFailure', () {
+    test('detects a certificate failure in TUN mode', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'error vpncore ssl_verify_callback: [0] failed to verify certificate',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.certificateInvalid,
+      );
+    });
+
+    test('detects a certificate failure in SOCKS5 mode too', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'failed to verify certificate: wcrypt_e_trust_status',
+          windows: true,
+          socksMode: true,
+        ),
+        StartupFailure.certificateInvalid,
+      );
+    });
+
+    test('certificate failure wins over other markers in the same tail', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'failed to verify certificate\nwintun adapter is already in use',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.certificateInvalid,
+      );
+    });
+
     test('detects a busy Wintun adapter on Windows in TUN mode', () {
       expect(
         VpnService.classifyStartupFailure(
