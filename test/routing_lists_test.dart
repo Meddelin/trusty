@@ -143,14 +143,25 @@ void main() {
     expect(prefs.containsKey('routing_preset_count'), isFalse);
   });
 
-  test('fresh install gets the built-in list disabled, named Default',
-      () async {
+  test('a fresh install starts with no routing lists at all', () async {
+    final service = ConfigService();
+    expect(await service.loadRoutingLists(), isEmpty,
+        reason: 'nothing is added for the user; the catalogue is the way in');
+  });
+
+  test('an install that used the pre-0.4.0 preset keeps it', () async {
+    // The legacy keys are the only evidence that the old single preset was
+    // in use; without them there is nothing to carry over.
+    SharedPreferences.setMockInitialValues({
+      'routing_preset_enabled': true,
+      'routing_preset_count': 1204,
+    });
     final service = ConfigService();
     final lists = await service.loadRoutingLists();
     expect(lists, hasLength(1));
-    expect(lists.single.enabled, isFalse);
-    expect(lists.single.entryCount, 0);
-    expect(lists.single.name, 'Default');
+    expect(lists.single.enabled, isTrue, reason: 'it was on before the upgrade');
+    expect(lists.single.entryCount, 1204);
+    expect(lists.single.isBuiltin, isTrue);
   });
 
   test('stored builtin list with the old label is renamed to Default',
@@ -172,10 +183,13 @@ void main() {
     expect(lists.single.entryCount, 1200);
   });
 
-  test('enable/appliesTo updates persist; builtin cannot be deleted',
+  test('enable/appliesTo updates persist, and any list can be deleted',
       () async {
+    // A clean install has no lists, so migrate one in to have something to
+    // act on.
+    SharedPreferences.setMockInitialValues({'routing_preset_enabled': false});
     final service = ConfigService();
-    await service.loadRoutingLists();
+    expect(await service.loadRoutingLists(), hasLength(1));
 
     await service.setRoutingListEnabled(
         ConfigService.builtinRoutingListId, true);
@@ -188,7 +202,9 @@ void main() {
 
     await service.deleteRoutingList(ConfigService.builtinRoutingListId);
     lists = await service.loadRoutingLists();
-    expect(lists, hasLength(1), reason: 'built-in list must survive delete');
+    expect(lists, isEmpty,
+        reason: 'a carried-over list is removable like any other; an entry the '
+            'user cannot delete is a trap');
   });
 
   // ── Source formats: v2fly geosite / geoip ───────────────────────────────
@@ -425,15 +441,23 @@ EXAMPLE.COM
     expect(routingPresets, isNotEmpty);
     for (final preset in routingPresets) {
       expect(preset.name, isNotEmpty);
-      expect(Uri.parse(preset.url).isAbsolute, isTrue);
-      expect(const {'geosite', 'geoip'}, contains(preset.format));
+      expect(preset.urls, isNotEmpty);
+      for (final url in preset.urls) {
+        expect(Uri.parse(url).isAbsolute, isTrue);
+      }
+      expect(const {'plain', 'geosite', 'geoip'}, contains(preset.format));
     }
     expect(
       routingPresets
           .where((preset) => preset.format == 'geoip')
-          .every((preset) => preset.url.endsWith('.txt')),
+          .every((preset) => preset.urls.every((u) => u.endsWith('.txt'))),
       isTrue,
       reason: 'v2fly geoip text releases are per-country .txt files',
+    );
+    expect(
+      routingPresets.where((p) => p.urls.length > 1),
+      isNotEmpty,
+      reason: 'the blocked-in-Russia preset merges several sources',
     );
   });
 }

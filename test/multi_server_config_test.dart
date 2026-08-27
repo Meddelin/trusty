@@ -362,9 +362,18 @@ void main() {
     expect(active.password, 'pa');
     expect(secureStore.containsKey('vpn_password_$idB'), isFalse);
 
-    // The last server cannot be deleted.
+    // Deleting the last server does not refuse and does not leave the app
+    // with an empty list: the entry is replaced by a blank one, so there is
+    // always something to show and to edit.
     await service.deleteServer(idA);
-    expect(await service.loadServers(), hasLength(1));
+    final afterLast = await service.loadServers();
+    expect(afterLast, hasLength(1));
+    expect(afterLast.single.id, isNot(idA));
+    expect(afterLast.single.hostname, ServerConfig.defaultConfig().hostname);
+    expect(afterLast.single.password, isEmpty);
+    expect(secureStore.containsKey('vpn_password_$idA'), isFalse,
+        reason: 'the deleted entry must not leave its password behind');
+    expect(await service.getActiveServerId(), afterLast.single.id);
   });
 
   test('plaintext client random prefixes migrate into the keystore', () async {

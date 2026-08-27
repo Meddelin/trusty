@@ -33,4 +33,38 @@ void main() {
     expect(result.ok, isFalse);
     expect(result.message, contains('TLS handshake failed'));
   });
+
+  group('connection filtering', () {
+    test('a silent endpoint reads as filtering when a prefix is configured',
+        () async {
+      // A filtering server accepts the TCP connection, reads the ClientHello
+      // and closes without a byte in reply — no TLS alert at all. Reproduce
+      // that by accepting and immediately destroying.
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((socket) => socket.destroy());
+      addTearDown(server.close);
+
+      final filtered = await testServerConnection(
+        address: server.address.address,
+        port: server.port,
+        hostname: 'vpn.example.com',
+        hasFilteringPrefix: true,
+        timeout: const Duration(seconds: 3),
+      );
+      expect(filtered.ok, isTrue, reason: 'a filtering server is not a fault');
+      expect(filtered.filtered, isTrue);
+      expect(filtered.message, contains('connection filtering'));
+
+      // The same endpoint without a configured prefix is still a real failure:
+      // nothing explains the silence.
+      final plain = await testServerConnection(
+        address: server.address.address,
+        port: server.port,
+        hostname: 'vpn.example.com',
+        timeout: const Duration(seconds: 3),
+      );
+      expect(plain.ok, isFalse);
+      expect(plain.filtered, isFalse);
+    });
+  });
 }
