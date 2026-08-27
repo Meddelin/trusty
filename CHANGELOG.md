@@ -2,19 +2,8 @@
 
 ## [1.0.0] - 2026-08-27
 
-### Changed
-- **The interface was redesigned.** Every screen is now a set of flat cards on a dark ground that use the whole window instead of a narrow centred column. The colours are sampled from the app icon (a keyhole onto a teal starfield), and the typefaces ship with the app: Geologica for the interface, Chivo Mono for the values you read as data (hosts, ports, counts, log lines), with JetBrains Mono behind it so Cyrillic keeps the same advance width and a list holding `кино.рф` never reflows its column. Material's ripple is gone: hover and press are stated once and behave the same in every control. Light and dark both follow the OS setting.
-- **The Settings tab is gone, and its three controls moved next to what they govern.** The navigation is now five destinations: Home, Servers, Split Tunnel, Logs, Deploy. **Log level** sits on the **Logs** screen beside the level filters. **Connection mode** (VPN/TUN or Proxy/SOCKS5) and the **SOCKS5 port** are in the shared-settings card on **Servers**, next to the app-wide DNS. **On window close** (ask / minimize / exit) is in the footer of the navigation rail.
-- **Routing lists start empty.** A fresh install no longer seeds the "Default" list of sites blocked in Russia. That set is the first entry of the add-list catalogue, so it is one click away, and any list can be deleted now, including one carried over from an older install. Upgrading from a version that used the old preset keeps it.
-- **The navigation rail holds what belongs to the app.** The icon is at the top; the footer carries the close-behaviour preference, a link to the GitHub repository, a link to the [Telegram group](https://t.me/+JizbvklDJYg0Njg6), and the version of the running build.
-
-### Fixed
-- **Test connection no longer fails against a server that filters connections.** Such a server answers nothing to a handshake without the marker, which is what filtering is for; the test now reports that the server was reached and ignored an unmarked handshake, rather than calling it a failure.
-- **Deleting the last server works.** The entry is replaced by a blank one instead of the delete being refused, so a saved server can always be cleared out.
-- **Logs carry no emoji.** A line's severity is a field the app reads (filter chips, counts, colouring) instead of a glyph pasted into the text, and the client's own `ERROR`/`WARN` lines are read the same way.
-- **Contrast and labels.** Text clears the WCAG AA 4.5:1 floor in both themes, and every icon-only control (the rail footer buttons, list row actions, the preset picker) has a name assistive technology can read.
-
-## [0.4.0] - 2026-08-26
+This is everything released since 0.3.4. Version 0.4.0 was developed and tagged in the
+changelog but never published, so its changes ship here.
 
 ### Added
 - **Multiple servers, as a list** — Trusty now keeps a list of servers on a dedicated **Servers** tab: one card per server, one click switches the active server, the pencil opens an inline editor (with a discard-unsaved-changes guard), **Add server** opens a dialog that commits nothing until confirmed, and Delete lives inside the editor. Servers can have display names. The Home screen additionally shows a quick switcher above the Connect button when more than one server is saved. Switching replaces only the connection fields (host, credentials, protocol tweaks); app-wide settings — DNS, log level, VPN mode, split-tunneling lists — are preserved (DNS and log level are truly app-global keys now, with one-time migration). The existing single config is migrated into the list automatically. The **Settings** tab holds only application options (log level, close behavior); **shared network settings** (DNS — identical for every server) sit at the bottom of the Servers tab. The server-deployment tab is now called **Deploy**.
@@ -29,16 +18,14 @@
 - **SOCKS5 connection mode** (requested in [#12](https://github.com/Meddelin/trusty/issues/12)) — Settings → Application has a connection-mode switch: **VPN (TUN)** (the default: full-system tunnel through a virtual adapter — Wintun on Windows) or **Proxy (SOCKS5)**, where the client runs a local SOCKS5 proxy on `127.0.0.1:<port>` (port configurable, loopback only) and creates **no network interface — `wintun.dll` is not used at all**. In SOCKS5 mode the app skips every piece of adapter handling (release waits, "Wintun busy" retries, "run as administrator" hints) and on macOS launches the client without sudo/privilege setup. The Home screen shows the proxy address while connected. Split-tunnel rules still apply to connections that go through the proxy, but only apps pointed at the proxy are tunneled at all — the Split Tunnel screen shows a banner saying exactly that. Known limitation: on Windows the app itself still requests administrator rights at startup even in SOCKS5 mode (the elevation is baked into the exe manifest); making it on-demand is separate future work.
 - The **Post-Quantum Key Exchange** toggle now explains what it does and why it should stay enabled.
 
-### Security
-- **Client random prefix in the OS keystore** — the connection-filtering prefix is an access token, and it used to sit as plaintext JSON in `SharedPreferences`. It now lives in the keystore (one key per server, plus the deploy result's generated prefix), like the password; existing plaintext values are migrated automatically.
-- **Config file cleanup** — the generated `trusttunnel_client.toml` (which contains the VPN password in plaintext) is deleted after disconnect and on app exit instead of lingering on disk; it is rewritten on every connect anyway.
-
 ### Changed
+- **The interface was redesigned.** Every screen is now a set of flat cards on a dark ground that use the whole window instead of a narrow centred column. The colours are sampled from the app icon (a keyhole onto a teal starfield), and the typefaces ship with the app: Geologica for the interface, Chivo Mono for the values you read as data (hosts, ports, counts, log lines), with JetBrains Mono behind it so Cyrillic keeps the same advance width and a list holding `кино.рф` never reflows its column. Material's ripple is gone: hover and press are stated once and behave the same in every control. Light and dark both follow the OS setting.
+- **The Settings tab is gone, and its three controls moved next to what they govern.** The navigation is now five destinations: Home, Servers, Split Tunnel, Logs, Deploy. **Log level** sits on the **Logs** screen beside the level filters. **Connection mode** (VPN/TUN or Proxy/SOCKS5) and the **SOCKS5 port** are in the shared-settings card on **Servers**, next to the app-wide DNS. **On window close** (ask / minimize / exit) is in the footer of the navigation rail.
+- **Routing lists start empty.** A fresh install no longer seeds the "Default" list of sites blocked in Russia. That set is the first entry of the add-list catalogue, so it is one click away, and any list can be deleted now, including one carried over from an older install. Upgrading from a version that used the old preset keeps it.
+- **The navigation rail holds what belongs to the app.** The icon is at the top; the footer carries the close-behaviour preference, a link to the GitHub repository, a link to the [Telegram group](https://t.me/+JizbvklDJYg0Njg6), and the version of the running build.
 - **Instant close** — quitting no longer awaits the native window teardown before exiting; the app closes immediately instead of stalling for seconds (and can no longer hang if that teardown never completes). A repeated close click no longer stacks dialogs.
 - **Unified messages** — one themed `InfoBanner` (info/warning/error, correct dark-mode contrast, optional persistent dismiss) replaced seven hand-rolled banners; one snackbar helper with fixed conventions (success 3s / warning 4s / error 6s with an automatic Copy action) replaced ~20 ad-hoc toasts. The first-run Home card and the update banner are dismissible for good.
 - **Visual refresh** — custom desaturated steel-blue theme with semantic status tokens (correct in dark mode; red reserved for errors), flat tonal cards with hairline outlines, tonal navigation rail, floating snackbars, an animated status hero (breathing ring while connected, rotating icon while connecting), a calm tonal Disconnect button, and content constrained to a 640px column on desktop.
-
-### Changed — Split Tunnel rework
 - **Adding entries is instant** — a new entry lands in the list immediately; the related-domains discovery is now an optional "Find related" snackbar action instead of a blocking dialog on every add.
 - **Input normalization & validation** — the add field accepts whatever you paste: a full URL (`https://VK.com:443/feed` → `vk.com`), a bare domain (including unicode like `кино.рф`), `*.wildcard`, IPv4/IPv6 (with or without port/brackets) or CIDR. Invalid entries are rejected with a message; a typo like `10.0.0.0/99` is an error instead of being silently truncated. The same validation applies to bulk import (with a "N invalid skipped" summary) and to adding into a group.
 - **Editable while connected** — the Split Tunnel screen is no longer locked while the VPN is up; changes are saved immediately and apply on the next connect (the banner says so).
@@ -47,16 +34,24 @@
 - **Compact mode switcher** — the two large mode cards are now a segmented button with a one-line description, freeing vertical space for the actual lists.
 - Duplicate checks now work across groups and the standalone list together, case-insensitively; the group "rename" button is labeled Rename instead of Save.
 
+### Fixed
+- **Test connection no longer fails against a server that filters connections.** Such a server answers nothing to a handshake without the marker, which is what filtering is for; the test now reports that the server was reached and ignored an unmarked handshake, rather than calling it a failure.
+- **Deleting the last server works.** The entry is replaced by a blank one instead of the delete being refused, so a saved server can always be cleared out.
+- **Logs carry no emoji.** A line's severity is a field the app reads (filter chips, counts, colouring) instead of a glyph pasted into the text, and the client's own `ERROR`/`WARN` lines are read the same way.
+- **Contrast and labels.** Text clears the WCAG AA 4.5:1 floor in both themes, and every icon-only control (the rail footer buttons, list row actions, the preset picker) has a name assistive technology can read.
+- Saving connection settings no longer resets the VPN mode and split-tunneling lists (the Settings form previously rebuilt the config from scratch).
+- The `client/` folder (CLI, wintun, configs) is now looked up next to `Trusty.exe` instead of the launch working directory — starting the app from a shortcut, Explorer or a terminal with any CWD works; `flutter run` from the repo root still finds the repo's `client/`. A missing CLI error now always names `trusttunnel_client.exe`.
+- A failed server-certificate check (e.g. an expired Let's Encrypt certificate) is now reported as such, with renewal hints — previously the CLI exited with code 0 and the app showed only a cryptic "Process exited immediately after start".
+
 ### Performance
 - **Bulk paste import is linear now** — importing a pasted domain list de-duplicated each line with a `List.contains` scan (quadratic: already noticeable around a thousand lines, minutes at tens of thousands); de-duplication now goes through a `Set`, extracted as a testable `importExclusionList` helper.
 - **Domains tab builds its rows lazily** — the domain list is a `ListView.builder` instead of eagerly constructing a widget for every entry on each rebuild.
 - Saving or writing the config no longer stringifies the entire domain list into the debug log (counts are logged instead) — with merged routing lists that built megabyte-sized log strings on every connect.
 - **Large-list perf tests** — a new suite (`test/perf/large_lists_perf_test.dart`) proves 50 000-entry workloads stay fast and correct: TOML generation, pasted-list import, geosite/geoip parsing, routing-list merging with de-duplication, JSON round-trips of stored structures, and `.lst` cache loading — each asserts both the result and a generous wall-time bound, offline and deterministic.
 
-### Fixed
-- Saving connection settings no longer resets the VPN mode and split-tunneling lists (the Settings form previously rebuilt the config from scratch).
-- The `client/` folder (CLI, wintun, configs) is now looked up next to `Trusty.exe` instead of the launch working directory — starting the app from a shortcut, Explorer or a terminal with any CWD works; `flutter run` from the repo root still finds the repo's `client/`. A missing CLI error now always names `trusttunnel_client.exe`.
-- A failed server-certificate check (e.g. an expired Let's Encrypt certificate) is now reported as such, with renewal hints — previously the CLI exited with code 0 and the app showed only a cryptic "Process exited immediately after start".
+### Security
+- **Client random prefix in the OS keystore** — the connection-filtering prefix is an access token, and it used to sit as plaintext JSON in `SharedPreferences`. It now lives in the keystore (one key per server, plus the deploy result's generated prefix), like the password; existing plaintext values are migrated automatically.
+- **Config file cleanup** — the generated `trusttunnel_client.toml` (which contains the VPN password in plaintext) is deleted after disconnect and on app exit instead of lingering on disk; it is rewritten on every connect anyway.
 
 ## [0.3.4] - 2026-07-18
 

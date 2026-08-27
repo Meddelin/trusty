@@ -171,13 +171,13 @@ jobs:
             1. Download and extract the ZIP
             2. Place `client/` folder next to the `.app`
             3. Right-click the `.app` → **Open** (bypasses Gatekeeper)
-            4. Configure server in Settings
-            5. Connect!
+            4. Add a server on the Servers tab, or deploy one from the Deploy tab
+            5. Press Connect
 
             ### Known Limitations
 
             - No code signing (Gatekeeper will block — use Right-click → Open)
-            - On first VPN connect, a macOS password dialog appears once to grant TUN access (no terminal needed)
+            - In VPN (TUN) mode the first connect shows a macOS password dialog once, to grant tunnel access; no terminal needed. Proxy (SOCKS5) mode never asks
             - Split tunnel app detection is best-effort
 
             ### Requirements

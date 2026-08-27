@@ -218,62 +218,64 @@ jobs:
         id: changelog
         run: |
           $cliVersion = (Get-Content ".\cli_version.txt" -Raw).Trim()
+          $version = "${env:GITHUB_REF_NAME}" -replace '^v', ''
+
+          # Release notes are read out of CHANGELOG.md for the tag being built,
+          # so they cannot drift the way a hardcoded body does. Take the
+          # section for this version and stop at the next one.
+          $notes = ""
+          $inSection = $false
+          if (Test-Path ".\CHANGELOG.md") {
+            foreach ($line in (Get-Content ".\CHANGELOG.md")) {
+              if ($line -match '^##\s+\[?([0-9]+\.[0-9]+\.[0-9]+)') {
+                if ($Matches[1] -eq $version) { $inSection = $true; continue }
+                elseif ($inSection) { break }
+              }
+              if ($inSection) { $notes += "$line`n" }
+            }
+          }
+          $notes = $notes.Trim()
+          if (-not $notes) {
+            Write-Host "No CHANGELOG section for $version; falling back to a link."
+            $notes = "See the [changelog](https://github.com/Meddelin/trusty/blob/main/CHANGELOG.md)."
+          }
+
+          # No backticks below: inside a PowerShell here-string a backtick is an
+          # escape character, so a markdown code span would be eaten.
           $changelog = @"
-          ## Trusty v0.3.4
+          ## Trusty $version
 
-          Security hardening plus instant connect/disconnect.
-
-          ### 🔒 Security
-          - **TOML injection** — all interpolated values (passwords, usernames, hostnames, domains, DNS, SNI) are escaped in client and server configs, so a crafted value can't inject config keys.
-          - **Command injection** — domain/email are validated (and shell metacharacters rejected) before they reach the root SSH commands run during server deployment.
-          - **SSH MITM** — trust-on-first-use host-key verification: the fingerprint is remembered on first connect and a mismatch aborts the deploy, with a one-click "Trust new host key" recovery for a rebuilt VPS.
-          - **macOS sudoers** — the binary path/username are validated before the NOPASSWD rule is written, and the rule is verified by visudo in a staging file before it can take effect.
-          - **Credential storage** — the VPN password is stored in the OS keystore (Windows DPAPI / macOS Keychain) instead of plaintext; existing plaintext is migrated and the config file is locked to the owner.
-          - **TLS** — domain discovery no longer accepts invalid certificates; a warning is shown when certificate verification is disabled.
-
-          ### ⚡ Performance
-          - **Disconnect is instant** — no more multi-second freeze; the Wintun release wait is paid invisibly before the next connect instead.
-          - **Connect completes as soon as the tunnel is up** — no fixed 2-second sleep.
-          - **Faster UI** — app list loads lazily off the UI thread, log screens rebuild less, quitting the app is immediate.
-
-          ### ✨ UX
-          - The close-window dialog can remember your choice; change it later via Settings → "On window close".
-          - Tray menu and tooltip always reflect the current VPN status.
-
-          ### ✨ What's Included
-
-          ✅ **TrustTunnel CLI ($cliVersion) is pre-bundled!**
-          No separate downloads needed - everything works out of the box.
+          $notes
 
           ### Installation
 
-          1. Download the ZIP file below
-          2. Extract to your preferred location
-          3. Run `Trusty.exe`
-          4. Install a server or configure an existing one
-          5. Click Connect!
+          1. Download the ZIP below
+          2. Extract it wherever you like
+          3. Run Trusty.exe
+          4. Add a server on the Servers tab, or deploy one from the Deploy tab
+          5. Press Connect
+
+          The TrustTunnel CLI ($cliVersion) and the Wintun driver are bundled, so there is nothing else to download.
 
           ### Requirements
 
-          - Windows 10/11 (64-bit)
-          - Administrator privileges
-          - TrustTunnel server access
+          - Windows 10/11, 64-bit
+          - Administrator rights
+          - Access to a TrustTunnel server
 
           ### Documentation
 
           - [README](https://github.com/Meddelin/trusty/blob/main/README.md)
-          - [Configuration Guide](https://github.com/Meddelin/trusty/blob/main/CONFIGURATION.md)
-          - [Building from Source](https://github.com/Meddelin/trusty/blob/main/BUILDING.md)
+          - [Configuration guide](https://github.com/Meddelin/trusty/blob/main/CONFIGURATION.md)
+          - [Building from source](https://github.com/Meddelin/trusty/blob/main/BUILDING.md)
 
-          ### Related Projects
+          ### Related projects
 
-          - [TrustTunnel Protocol](https://github.com/TrustTunnel/TrustTunnel)
+          - [TrustTunnel protocol](https://github.com/TrustTunnel/TrustTunnel)
           "@
 
-          # Save to output
           $changelog | Out-File -FilePath changelog.md -Encoding UTF8
 
-          # Set output for next step
           echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
           Get-Content changelog.md | ForEach-Object { echo $_ >> $env:GITHUB_OUTPUT }
           echo "EOF" >> $env:GITHUB_OUTPUT
@@ -283,6 +285,9 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
+          # Without this the release is titled with the bare tag. Derived from
+          # the tag rather than written out, so it cannot go stale.
+          name: Trusty ${{ github.ref_name }}
           files: |
             Trusty-Windows-*.zip
           # Both workflows publish into the same release; append so the
