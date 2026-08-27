@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0] - 2026-08-27
+
+### Changed
+- **The interface was redesigned.** Every screen is now a set of flat cards on a dark ground that use the whole window instead of a narrow centred column. The colours are sampled from the app icon (a keyhole onto a teal starfield), and the typefaces ship with the app: Geologica for the interface, Chivo Mono for the values you read as data (hosts, ports, counts, log lines), with JetBrains Mono behind it so Cyrillic keeps the same advance width and a list holding `кино.рф` never reflows its column. Material's ripple is gone: hover and press are stated once and behave the same in every control. Light and dark both follow the OS setting.
+- **The Settings tab is gone, and its three controls moved next to what they govern.** The navigation is now five destinations: Home, Servers, Split Tunnel, Logs, Deploy. **Log level** sits on the **Logs** screen beside the level filters. **Connection mode** (VPN/TUN or Proxy/SOCKS5) and the **SOCKS5 port** are in the shared-settings card on **Servers**, next to the app-wide DNS. **On window close** (ask / minimize / exit) is in the footer of the navigation rail.
+- **Routing lists start empty.** A fresh install no longer seeds the "Default" list of sites blocked in Russia. That set is the first entry of the add-list catalogue, so it is one click away, and any list can be deleted now, including one carried over from an older install. Upgrading from a version that used the old preset keeps it.
+- **The navigation rail holds what belongs to the app.** The icon is at the top; the footer carries the close-behaviour preference, a link to the GitHub repository, a link to the [Telegram group](https://t.me/+JizbvklDJYg0Njg6), and the version of the running build.
+
+### Fixed
+- **Test connection no longer fails against a server that filters connections.** Such a server answers nothing to a handshake without the marker, which is what filtering is for; the test now reports that the server was reached and ignored an unmarked handshake, rather than calling it a failure.
+- **Deleting the last server works.** The entry is replaced by a blank one instead of the delete being refused, so a saved server can always be cleared out.
+- **Logs carry no emoji.** A line's severity is a field the app reads (filter chips, counts, colouring) instead of a glyph pasted into the text, and the client's own `ERROR`/`WARN` lines are read the same way.
+- **Contrast and labels.** Text clears the WCAG AA 4.5:1 floor in both themes, and every icon-only control (the rail footer buttons, list row actions, the preset picker) has a name assistive technology can read.
+
 ## [0.4.0] - 2026-08-26
 
 ### Added
