@@ -71,7 +71,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get vpnStatusDisconnected => 'Disconnected';
 
   @override
-  String get vpnStatusConnecting => 'Connecting...';
+  String get vpnStatusConnecting => 'Connecting…';
 
   @override
   String get vpnStatusConnected => 'Connected';
@@ -137,15 +137,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeInfoTitle => 'Information';
 
   @override
-  String get homeInfoLine1 => 'Add your server in the \"Servers\" tab';
+  String get homeInfoLine1 => 'Add your server on the Servers tab first';
 
   @override
   String get homeInfoLineClientWindows =>
-      'Make sure trusttunnel_client.exe is in the client/ directory';
+      'trusttunnel_client.exe belongs in the client/ directory';
 
   @override
   String get homeInfoLineClientOther =>
-      'Make sure trusttunnel_client is in the client/ directory';
+      'trusttunnel_client belongs in the client/ directory';
 
   @override
   String get homeInfoLine3 =>
@@ -173,11 +173,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String logsTotalEntries(int count) {
-    return 'Total entries: $count';
+    return '$count lines · this session only';
   }
 
   @override
-  String get logsEmpty => 'Logs are empty';
+  String get logsEmpty => 'No logs yet';
 
   @override
   String get logsConnectToSee => 'Connect to VPN to see logs';
@@ -215,21 +215,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsDnsHelper =>
-      'One or more upstreams, comma-separated: IP, tls:// (DoT), https:// (DoH), quic:// (DoQ)';
+      'One or more upstreams, separated by commas: a plain IP, tls://, https:// or quic://. Takes effect when you next connect.';
 
   @override
   String get settingsPrefixHelper =>
-      'Only for servers with connection filtering: exact hex prefix[/mask] from the server\'s rules.toml';
+      'The exact hex prefix[/mask] from your server\'s rules.toml. Only servers that use connection filtering need one.';
 
   @override
   String get commonDelete => 'Delete';
 
   @override
   String get settingsWarningConnected =>
-      'Server settings are locked while connected. Application settings can be changed anytime and apply on the next connect.';
-
-  @override
-  String get settingsSectionServer => 'Server';
+      'Server settings are locked while connected. Disconnect to edit.';
 
   @override
   String get settingsHostname => 'Hostname';
@@ -238,7 +235,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsHostnameError => 'Enter hostname';
 
   @override
-  String get settingsAddress => 'IP Address';
+  String get settingsAddress => 'IP address';
 
   @override
   String get settingsAddressError => 'Enter IP address';
@@ -253,9 +250,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPortErrorInvalid => 'Invalid port';
 
   @override
-  String get settingsSectionAuth => 'Authentication';
-
-  @override
   String get settingsUsername => 'Username';
 
   @override
@@ -268,13 +262,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPasswordError => 'Enter password';
 
   @override
-  String get settingsSectionNetwork => 'Network';
+  String get settingsDns => 'DNS upstreams';
 
   @override
-  String get settingsDns => 'DNS Server';
-
-  @override
-  String get settingsDnsError => 'Enter DNS server';
+  String get settingsDnsError => 'Enter at least one upstream';
 
   @override
   String get settingsDnsPresetTooltip => 'Add a DNS preset';
@@ -287,7 +278,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsProtocol => 'Protocol';
 
   @override
-  String get settingsLogLevel => 'Log Level';
+  String get settingsLogLevel => 'Log level';
+
+  @override
+  String get settingsLogLevelHelper =>
+      'One level for every server. It takes effect when you next connect.';
 
   @override
   String get settingsConnectionMode => 'Connection mode';
@@ -300,11 +295,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsConnectionModeTunHint =>
-      'Routes all system traffic through a virtual network adapter (Wintun on Windows). Requires administrator rights.';
+      'Routes system traffic through a virtual network adapter, leaving addresses on your local network off the tunnel. Requires administrator rights.';
 
   @override
   String get settingsConnectionModeSocksHint =>
-      'Runs a local SOCKS5 proxy on 127.0.0.1 — no virtual adapter or Wintun needed. Only apps you point at the proxy (or the system proxy settings) go through the VPN.';
+      'Runs a local proxy on 127.0.0.1 without creating a network adapter, so only the apps you point at it go through the tunnel. On Windows the app still starts with administrator rights.';
 
   @override
   String get settingsConnectionModeLocked =>
@@ -314,10 +309,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsSocksPort => 'SOCKS5 port';
 
   @override
-  String get settingsSocksPortHelper => 'The proxy listens on 127.0.0.1 only';
+  String get settingsSocksPortHelper =>
+      'The proxy listens on 127.0.0.1 and nothing else. Reconnect for a change to take effect.';
 
   @override
   String get settingsSocksPortError => 'Enter a port between 1 and 65535';
+
+  @override
+  String get settingsCloseAction => 'On window close';
+
+  @override
+  String get settingsCloseActionHelper =>
+      'Ask each time, minimize to the tray, or exit. This one takes effect straight away.';
+
+  @override
+  String get settingsCloseActionAsk => 'ask';
+
+  @override
+  String get settingsCloseActionMinimize => 'minimize';
+
+  @override
+  String get settingsCloseActionExit => 'exit';
+
+  @override
+  String get settingsAppSection => 'App settings';
+
+  @override
+  String get settingsAppSectionSubtitle => 'Shared by every server';
+
+  @override
+  String get settingsAppliesNextConnect => 'Applies on your next connect';
 
   @override
   String get settingsSectionAdvanced => 'Advanced';
@@ -336,16 +357,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsPostQuantumHint =>
-      'Hybrid key exchange that protects the TLS handshake against future quantum computers (harvest-now-decrypt-later). Slightly larger handshake; recommended to keep enabled.';
+      'Hybrid key exchange that protects the TLS handshake against future quantum computers (harvest-now-decrypt-later). The handshake grows a little, which is why it stays on by default.';
 
   @override
   String get settingsCustomSni => 'Custom SNI (optional)';
 
   @override
-  String get settingsSave => 'Save Settings';
+  String get settingsSave => 'Save server';
 
   @override
-  String get settingsSaved => 'Settings saved';
+  String get settingsSaved => 'Server saved';
 
   @override
   String settingsSaveError(String error) {
@@ -354,29 +375,40 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitTunnelWarningConnected =>
-      'Changes are saved automatically and will apply after the VPN reconnects';
+      'Changes are saved now and take effect the next time you connect';
 
   @override
   String get splitTunnelSocksModeBanner =>
-      'SOCKS5 proxy mode is active. These rules apply to connections that go through the local proxy; apps not pointed at the proxy bypass the VPN — and these lists — entirely.';
+      'Proxy mode is active. Only apps you point at 127.0.0.1 go through the tunnel; these rules apply to the traffic that reaches the proxy.';
 
   @override
-  String get splitTunnelVpnMode => 'VPN Mode';
+  String get splitTunnelVpnMode => 'Tunnel mode';
 
   @override
-  String get splitTunnelModeGeneralTitle => 'All traffic through VPN';
+  String get splitTunnelModeGeneralTitle => 'General';
 
   @override
   String get splitTunnelModeGeneralSubtitle =>
-      'Exclusions will not go through VPN';
+      'Everything goes through the VPN except your list';
 
   @override
-  String get splitTunnelModeSelectiveTitle =>
-      'Only selected traffic through VPN';
+  String get splitTunnelModeGeneralSubtitleProxy =>
+      'Everything goes through the proxy except your list';
+
+  @override
+  String get splitTunnelModeSelectiveTitle => 'Selective';
 
   @override
   String get splitTunnelModeSelectiveSubtitle =>
-      'Only specified domains/apps through VPN';
+      'Only your list goes through the VPN';
+
+  @override
+  String get splitTunnelModeSelectiveSubtitleProxy =>
+      'Only your list goes through the proxy';
+
+  @override
+  String get splitTunnelModeSameList =>
+      'The same entries are exclusions in General mode, inclusions in Selective';
 
   @override
   String splitTunnelDomainsTab(int count) {
@@ -389,18 +421,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get splitTunnelAutoSave => 'Settings are saved automatically';
+  String get splitTunnelAutoSave =>
+      'Saved as you go, and picked up by your next connection';
 
   @override
-  String get splitTunnelDomainsExclude =>
-      'Domains that will NOT go through VPN:';
+  String get splitTunnelDomainsExclude => 'Domains kept off the VPN';
 
   @override
-  String get splitTunnelDomainsInclude => 'Domains that WILL go through VPN:';
+  String get splitTunnelDomainsInclude => 'Domains sent through the VPN';
 
   @override
   String get splitTunnelDomainsHint =>
-      'Domains (google.com), IPs (8.8.8.8), CIDR (10.0.0.0/8)';
+      'A domain, wildcard, IP, CIDR range or process name';
 
   @override
   String get splitTunnelDomainsInputHint => 'Enter domain, IP or CIDR';
@@ -452,16 +484,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get splitTunnelPresetHint =>
-      'Curated lists maintained by the v2fly community: domain categories (geosite) and per-country IP ranges (geoip). They update automatically like any URL list.';
+      'Ready-made sets of domains and IP ranges from the v2fly community: domain categories (geosite) and per-country IP ranges (geoip). Domain rules are imported; regexp and keyword rules are skipped.';
 
   @override
   String splitTunnelExclusionLimitWarning(int count, int limit) {
-    return '$count exclusions after merging routing lists (soft limit $limit) — connection setup may be slow. Consider disabling some routing lists.';
+    return 'Merging left $count domains and IP ranges, past the $limit the client handles comfortably. Connecting may take longer; switch a routing list off to bring it down.';
   }
 
   @override
   String get splitTunnelSuggestionTitle =>
-      'Detected in logs — Add to exclusions?';
+      'Seen in the logs. Add to your list?';
 
   @override
   String get splitTunnelSuggestionAddToGroup => 'Add to group';
@@ -481,16 +513,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get splitTunnelAppsExclude => 'Apps that will NOT use VPN:';
+  String get splitTunnelAppsExclude => 'Apps kept off the VPN';
 
   @override
-  String get splitTunnelAppsInclude => 'Apps that WILL use VPN:';
+  String get splitTunnelAppsInclude => 'Apps sent through the VPN';
+
+  @override
+  String get splitTunnelAppsHint =>
+      'Apps are matched by process name, like chrome.exe or Discord. If one is missing, start it and search again: running programs show the exact name.';
 
   @override
   String get splitTunnelSearchApps => 'Search apps...';
 
   @override
-  String get splitTunnelNoApps => 'No apps found';
+  String get splitTunnelNoApps =>
+      'Couldn\'t list your apps. Press refresh, or type a process name and press +.';
 
   @override
   String splitTunnelSelectedApps(int count) {
@@ -530,7 +567,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get serverInfoBanner =>
-      'TrustTunnel server installation on a remote VPS. Requires a VPS with Linux (Ubuntu/Debian), a domain name and SSH access (root).';
+      'Installs and configures a TrustTunnel server on your VPS over SSH. You need Debian or Ubuntu on x86_64 or ARM64, root SSH access, and a domain already pointing at the machine.';
 
   @override
   String get serverSectionSsh => 'SSH Connection';
@@ -576,7 +613,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get serverDomainHint =>
-      'Domain must point to server IP (A record in DNS)';
+      'Point this domain at your server\'s IP before you deploy, or the certificate step will fail.';
 
   @override
   String get serverEmail => 'Email (Let\'s Encrypt)';
@@ -603,6 +640,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get serverGeneratePassword => 'Generate password';
 
   @override
+  String get serverSshSecretsHint =>
+      'SSH details are used for this deployment only and are never saved';
+
+  @override
+  String get serverFilteringHint =>
+      'The server answers only connections carrying this secret marker and ignores everything else. Apply fills it in for you.';
+
+  @override
+  String get serverFilteringWarning =>
+      'Save it somewhere. Any device configured without this exact value gets ignored.';
+
+  @override
+  String get serverRestoredNote =>
+      'These values were restored after a restart. Enter the VPN password again on the Servers tab.';
+
+  @override
   String get serverInstallButton => 'Install Server';
 
   @override
@@ -615,7 +668,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get serverLogEmpty => 'Log is empty';
 
   @override
-  String get serverInstalled => 'Server installed and running!';
+  String get serverInstalled => 'Server installed. The service started.';
 
   @override
   String serverSuccessInfo(String domain, String port, String username) {
@@ -623,10 +676,14 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get serverApplySettings => 'Apply Client Settings';
+  String get serverApplySettings => 'Add to my servers';
 
   @override
-  String get serverSettingsApplied => 'Client settings updated';
+  String get serverApplyHint =>
+      'Adds this server to your list, or updates the entry with the same domain, and makes it active. You connect from the main screen.';
+
+  @override
+  String get serverSettingsApplied => 'Server added and selected';
 
   @override
   String serverError(String error) {

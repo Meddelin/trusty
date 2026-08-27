@@ -77,7 +77,7 @@ class ServerSetupService extends ChangeNotifier {
   ServerSetupResult? get lastResult => _lastResult;
 
   // SharedPreferences keys. Form defaults use the 'deploy_form_' prefix;
-  // ponytail: one JSON blob instead of nine individual keys — the model
+  // one JSON blob instead of nine individual keys — the model
   // already knows how to (de)serialize exactly its non-secret fields.
   static const String _formPrefsKey = 'deploy_form_config';
   static const String _lastResultPrefsKey = 'deploy_last_result';
@@ -169,7 +169,7 @@ class ServerSetupService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(key);
     _mismatchedHostKeyPrefsKey = null;
-    _addLog('Forgot saved SSH host key — the next connection will trust '
+    _addLog('Forgot saved SSH host key. The next connection will trust '
         'the new key.');
     notifyListeners();
   }
@@ -308,7 +308,7 @@ class ServerSetupService extends ChangeNotifier {
       _addLog('Installation completed successfully!');
       await _persistResult(config);
     } on _SetupCancelled {
-      _addLog('Installation cancelled — existing server was kept.');
+      _addLog('Installation cancelled. The existing server was kept.');
       _setStep(SetupStep.idle);
     } catch (e) {
       if (_cancelled) {
@@ -430,7 +430,7 @@ class ServerSetupService extends ChangeNotifier {
       await _client!.authenticated;
     } on SSHHostkeyError {
       throw Exception(
-          'SSH host key changed — possible MITM. Aborting. '
+          'SSH host key changed: possible MITM. Aborting. '
           'If you intentionally rebuilt ${config.host}, press '
           '"Trust new host key & retry" below.');
     }

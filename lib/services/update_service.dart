@@ -6,20 +6,29 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/open_external.dart';
+
 /// Checks GitHub Releases for a newer version and lets the user open the
 /// release page in a browser. Notify-only: no download/install.
 class UpdateService extends ChangeNotifier {
   static const _latestReleaseApi =
       'https://api.github.com/repos/Meddelin/trusty/releases/latest';
-  static const _releasesPage = 'https://github.com/Meddelin/trusty/releases/latest';
+  static const _releasesPage =
+      'https://github.com/Meddelin/trusty/releases/latest';
+  static const repositoryUrl = 'https://github.com/Meddelin/trusty';
   static const _timeout = Duration(seconds: 15);
 
   String? _latestVersion;
+  String? _currentVersion;
   String? _releaseUrl;
   bool _dismissed = false;
   Timer? _recheckTimer;
 
   String? get latestVersion => _latestVersion;
+
+  /// The running build's version, read from the binary's own metadata.
+  /// Null until [loadCurrentVersion] has answered.
+  String? get currentVersion => _currentVersion;
   bool get updateAvailable => _latestVersion != null && !_dismissed;
 
   /// Check now and re-check daily (the app lives in the tray for weeks).
@@ -33,11 +42,12 @@ class UpdateService extends ChangeNotifier {
 
   Future<void> checkForUpdate() async {
     try {
-      final current = (await PackageInfo.fromPlatform()).version;
+      final current = await loadCurrentVersion();
       final client = HttpClient()..connectionTimeout = _timeout;
       try {
-        final request =
-            await client.getUrl(Uri.parse(_latestReleaseApi)).timeout(_timeout);
+        final request = await client
+            .getUrl(Uri.parse(_latestReleaseApi))
+            .timeout(_timeout);
         request.headers.set('User-Agent', 'Trusty');
         request.headers.set('Accept', 'application/vnd.github+json');
         final response = await request.close().timeout(_timeout);
@@ -55,15 +65,14 @@ class UpdateService extends ChangeNotifier {
           // A dismissed version stays dismissed across restarts; a NEWER
           // release shows the banner again.
           final prefs = await SharedPreferences.getInstance();
-          _dismissed =
-              prefs.getString(_dismissedVersionKey) == version;
+          _dismissed = prefs.getString(_dismissedVersionKey) == version;
           notifyListeners();
         }
       } finally {
         client.close();
       }
     } catch (_) {
-      // ponytail: check failures (offline, rate limit) are silent — the
+      // Check failures (offline, rate limit) are silent — the
       // banner simply doesn't appear; next check is in 24h.
     }
   }
@@ -79,16 +88,22 @@ class UpdateService extends ChangeNotifier {
     );
   }
 
-  Future<void> openReleasePage() async {
-    final url = _releaseUrl ?? _releasesPage;
-    if (Platform.isWindows) {
-      // explorer hands the URL to the default browser without inheriting
-      // this process's admin token.
-      await Process.run('explorer.exe', [url]);
-    } else {
-      await Process.run('open', [url]);
+  /// Reads (and caches) the running build's version.
+  Future<String> loadCurrentVersion() async {
+    final cached = _currentVersion;
+    if (cached != null) return cached;
+    final version = (await PackageInfo.fromPlatform()).version;
+    if (version != _currentVersion) {
+      _currentVersion = version;
+      notifyListeners();
     }
+    return version;
   }
+
+  Future<void> openReleasePage() => openExternal(_releaseUrl ?? _releasesPage);
+
+  /// Opens the project's repository in the user's browser.
+  Future<void> openRepository() => openExternal(repositoryUrl);
 
   @override
   void dispose() {

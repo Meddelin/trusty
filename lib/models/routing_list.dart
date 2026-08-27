@@ -119,12 +119,16 @@ class RoutingList {
 /// format, so common lists are one pick instead of a hunt for raw URLs.
 class RoutingPreset {
   final String name;
-  final String url;
 
-  /// 'geosite' | 'geoip' (see [RoutingList.format]).
+  /// Most presets are a single source; a few merge several.
+  final List<String> urls;
+
+  /// 'plain' | 'geosite' | 'geoip' (see [RoutingList.format]).
   final String format;
 
-  const RoutingPreset(this.name, this.url, this.format);
+  RoutingPreset(this.name, String url, this.format) : urls = [url];
+
+  RoutingPreset.multi(this.name, this.urls, this.format);
 }
 
 const String _geositeBase =
@@ -132,9 +136,19 @@ const String _geositeBase =
 const String _geoipBase =
     'https://raw.githubusercontent.com/v2fly/geoip/release/text/';
 
-/// Presets offered by the add-list dialog: v2fly community domain categories
-/// and per-country IP blocks. The built-in "Default" list is separate.
+/// Presets offered by the add-list dialog: the maintained "blocked in Russia"
+/// set, v2fly community domain categories, and per-country IP blocks. Nothing
+/// is added for you — a fresh install starts with no routing lists at all.
 final List<RoutingPreset> routingPresets = [
+  RoutingPreset.multi(
+    'Sites blocked in Russia',
+    [
+      'https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia/inside-raw.lst',
+      'https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/telegram.lst',
+      'https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/discord.lst',
+    ],
+    'plain',
+  ),
   RoutingPreset('YouTube', '${_geositeBase}youtube', 'geosite'),
   RoutingPreset('Discord', '${_geositeBase}discord', 'geosite'),
   RoutingPreset('Meta (Facebook / Instagram)', '${_geositeBase}meta', 'geosite'),

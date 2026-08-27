@@ -416,16 +416,27 @@ class ConfigService extends ChangeNotifier {
     await saveConfig(current.copyWith(socksPort: port));
   }
 
-  /// Delete a server entry and its stored password. The last remaining
-  /// server cannot be deleted. Deleting the active server switches to the
-  /// first remaining one.
+  /// Delete a server entry and its stored password. Deleting the active
+  /// server switches to the first remaining one; deleting the last one
+  /// replaces it with a blank entry, so the app always has something to show
+  /// and the user is never stuck with a server they cannot remove.
   Future<void> deleteServer(String id) async {
     final prefs = await SharedPreferences.getInstance();
     await _ensureServerList(prefs);
     final servers = _decodeServers(prefs);
-    if (servers.length <= 1) return;
+    final before = servers.length;
     servers.removeWhere((s) => s['id'] == id);
-    if (servers.isEmpty) return; // unknown id shrank nothing; guard anyway
+    if (servers.length == before) return; // unknown id shrank nothing
+    // Deleting the last entry resets it to a blank server instead of leaving
+    // the app with nothing to show or connect to: the seeding path only runs
+    // when the key is absent, so an empty list would simply stay empty and
+    // the Home switcher would have nothing to render.
+    if (servers.isEmpty) {
+      final fresh = ServerConfig.defaultConfig().toJson();
+      fresh['id'] = newServerId();
+      fresh.remove('password');
+      servers.add(fresh);
+    }
     await prefs.setString(_serversKey, jsonEncode(servers));
     try {
       await _secureStorage.delete(key: _pwKey(id));
@@ -598,10 +609,24 @@ class ConfigService extends ChangeNotifier {
     required String exeDir,
     required String currentDir,
     required bool Function(String path) fileExists,
+    bool devRun = false,
   }) {
-    final installed = _cliBinaryNames
-        .any((name) => fileExists(p.join(exeDir, 'client', name)));
-    return installed ? exeDir : currentDir;
+    bool hasCli(String dir) =>
+        _cliBinaryNames.any((name) => fileExists(p.join(dir, 'client', name)));
+
+    // A packaged install: client/ sits next to the executable.
+    if (hasCli(exeDir)) return exeDir;
+    // A dev run: the executable is deep inside build/ (or is the test runner),
+    // while client/ sits at the directory the run was started from.
+    if (hasCli(currentDir)) return currentDir;
+    // Nothing is installed yet, so there is no CLI to point at and the answer
+    // decides two things: the path the "client not found" message tells the
+    // user to fill, and where client/ gets created. In a shipped build that
+    // must be the executable's own directory — falling back to the launch CWD
+    // sent users chasing a path inside whatever folder the process happened to
+    // start in, and created a stray client/ there. During development the CWD
+    // is the project (or a test's temp dir), which is exactly what we want.
+    return devRun ? currentDir : exeDir;
   }
 
   /// Get path to client directory
@@ -623,6 +648,10 @@ class ConfigService extends ChangeNotifier {
         exeDir: File(Platform.resolvedExecutable).parent.path,
         currentDir: Directory.current.path,
         fileExists: (path) => File(path).existsSync(),
+        // In debug the "executable" is the Flutter tester or the debug runner
+        // buried in build/, so the launch directory is the useful base. A
+        // release build is the app itself and must answer for its own folder.
+        devRun: kDebugMode,
       );
     }
 
@@ -924,10 +953,23 @@ class ConfigService extends ChangeNotifier {
         _routingListsKey, jsonEncode(lists.map((l) => l.toJson()).toList()));
   }
 
-  /// One-time migration: wrap the legacy single preset into the lists model
-  /// (or create the built-in entry disabled on fresh installs).
+  /// One-time migration of the legacy single preset into the lists model.
+  ///
+  /// A fresh install gets NO lists: the routing section starts empty and the
+  /// user picks what they want from the add-list catalogue, which carries the
+  /// same blocked-in-Russia set. Only an install that actually used the old
+  /// preset carries an entry over, so an upgrade never loses a list that was
+  /// already doing work.
   Future<void> _ensureRoutingLists(SharedPreferences prefs) async {
     if (prefs.containsKey(_routingListsKey)) return;
+
+    final hadLegacyPreset = prefs.containsKey(_presetEnabledKey) ||
+        prefs.containsKey(_presetUpdatedKey) ||
+        prefs.containsKey(_presetCountKey);
+    if (!hadLegacyPreset) {
+      await _saveRoutingLists(prefs, const []);
+      return;
+    }
 
     final builtin = RoutingList(
       id: builtinRoutingListId,
@@ -1128,8 +1170,8 @@ class ConfigService extends ChangeNotifier {
           entries.length < list.entryCount ~/ 2) {
         throw Exception(
             'Refresh returned only ${entries.length} of ${list.entryCount} '
-            'entries (${errors.length} sources failed) — keeping the '
-            'previous version');
+            'entries (${errors.length} sources failed), so the '
+            'previous version was kept');
       }
 
       // Write via temp-file + rename so a concurrent connect-time read never
@@ -1195,7 +1237,7 @@ class ConfigService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await _ensureRoutingLists(prefs);
     final lists = _decodeRoutingLists(prefs);
-    lists.removeWhere((l) => l.id == id && !l.isBuiltin);
+    lists.removeWhere((l) => l.id == id);
     await _saveRoutingLists(prefs, lists);
     try {
       final file = File(await _routingListCachePath(id));
