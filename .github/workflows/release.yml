@@ -285,6 +285,9 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
+          # Without this the release is titled with the bare tag. Derived from
+          # the tag rather than written out, so it cannot go stale.
+          name: Trusty ${{ github.ref_name }}
           files: |
             Trusty-Windows-*.zip
           # Both workflows publish into the same release; append so the
