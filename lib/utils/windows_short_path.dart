@@ -14,9 +14,9 @@ typedef _GetShortPathNameDart = int Function(
 /// (e.g. a Cyrillic install directory). Short paths sidestep that because they
 /// are always ASCII. The file/dir must already exist for Windows to return one.
 ///
-/// ponytail: 8.3 short names. If they're disabled on the volume, or the path
-/// doesn't exist, GetShortPathNameW returns 0 and we fall back to the original
-/// path — no worse than before.
+/// Short names can be disabled on a volume. When they are, or when the path
+/// doesn't exist, GetShortPathNameW returns 0 and we fall back to the
+/// original path, which is no worse than before.
 String toShortPathName(String path) {
   if (!Platform.isWindows) return path;
 

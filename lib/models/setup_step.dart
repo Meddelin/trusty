@@ -42,25 +42,9 @@ extension SetupStepExtension on SetupStep {
     }
   }
 
-  /// Get step color
-  Color get color {
-    switch (this) {
-      case SetupStep.idle:
-        return Colors.grey;
-      case SetupStep.connecting:
-      case SetupStep.checkingSystem:
-      case SetupStep.installing:
-      case SetupStep.configuringServer:
-      case SetupStep.obtainingCertificate:
-      case SetupStep.startingService:
-      case SetupStep.verifying:
-        return Colors.orange;
-      case SetupStep.completed:
-        return Colors.green;
-      case SetupStep.failed:
-        return Colors.red;
-    }
-  }
+  // Step colour used to live here as raw Colors.grey/orange/green/red. It is
+  // gone: status accents come from the theme's StatusColors extension, which
+  // the Deploy screen maps the step onto (`_stateColor`).
 
   /// Get step icon
   IconData get icon {

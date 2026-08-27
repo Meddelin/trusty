@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/server_config.dart';
 import '../models/vpn_status.dart';
+import '../utils/log_level.dart';
 import '../utils/windows_short_path.dart';
 import 'config_service.dart';
 
@@ -30,6 +31,14 @@ class VpnService extends ChangeNotifier {
 
   /// How long the Wintun adapter is assumed to stay busy after the process dies.
   static const Duration _adapterReleaseDuration = Duration(seconds: 5);
+
+  /// Connection mode of the current/last launch ('tun' | 'socks5'). SOCKS5
+  /// never touches the Wintun adapter, so all adapter waits, busy retries and
+  /// admin hints are skipped in that mode.
+  String _activeConnectionMode = 'tun';
+
+  /// Local proxy address of the running SOCKS5 listener, null in TUN mode.
+  String? _socksAddress;
 
   /// Stdout/stderr markers the CLI prints once the tunnel is actually up.
   /// Verified from real CLI logs.
@@ -58,9 +67,52 @@ class VpnService extends ChangeNotifier {
     return false;
   }
 
+  /// Classify a non-zero CLI exit right after launch from the last (already
+  /// lower-cased) log lines. TUN-specific kinds are never reported in SOCKS5
+  /// mode: it touches neither Wintun nor the TUN device, so an admin/adapter
+  /// hint would point the user at the wrong fix.
+  static StartupFailure classifyStartupFailure(
+    String lastLogsLower, {
+    required bool windows,
+    required bool socksMode,
+  }) {
+    // Certificate failures happen in both TUN and SOCKS5 mode on every
+    // platform, and the CLI exits with code 0 after them — check first.
+    if (lastLogsLower.contains('failed to verify certificate')) {
+      return StartupFailure.certificateInvalid;
+    }
+    if (socksMode) return StartupFailure.generic;
+    if (windows) {
+      final isAccessDenied = lastLogsLower.contains('access is denied') ||
+          lastLogsLower.contains('access denied') ||
+          lastLogsLower.contains('code 0x5') ||
+          lastLogsLower.contains('code 0x00000005');
+      if (isAccessDenied) return StartupFailure.accessDenied;
+      final isWintunBusy = lastLogsLower.contains('wintun') &&
+          (lastLogsLower.contains('already') || lastLogsLower.contains('busy'));
+      if (isWintunBusy) return StartupFailure.wintunBusy;
+      return StartupFailure.generic;
+    }
+    // macOS/Linux: TUN permission errors (e.g. the sudo rule was removed).
+    final isTunPermissionDenied = lastLogsLower.contains('tun_open') &&
+        (lastLogsLower.contains('operation not permitted') ||
+            lastLogsLower.contains('(1) operation'));
+    return isTunPermissionDenied
+        ? StartupFailure.tunPermissionLost
+        : StartupFailure.generic;
+  }
+
   VpnStatus get status => _status;
   List<String> get logs => List.unmodifiable(_logs);
   String? get errorMessage => _errorMessage;
+
+  /// When the current connection was established (null unless connected).
+  DateTime? get connectedAt => _connectedAt;
+  DateTime? _connectedAt;
+
+  /// Address of the local SOCKS5 proxy (`127.0.0.1:<port>`) for the current
+  /// launch, null in TUN mode. The Home screen shows it while connected.
+  String? get socksAddress => _socksAddress;
 
   /// Add a log observer for real-time log monitoring
   void addLogObserver(void Function(String) observer) {
@@ -75,16 +127,22 @@ class VpnService extends ChangeNotifier {
   /// Connect to VPN
   Future<void> connect(ServerConfig config) async {
     if (_status.isActive) {
-      _addLog('⚠️ Already connected or connecting');
+      _addLog('WARN Already connected or connecting');
       return;
     }
 
     // Ensure previous process is fully cleaned up
     if (_process != null) {
-      _addLog('⚠️ Detected unfinished process, terminating...');
+      _addLog('WARN Detected unfinished process, terminating...');
       await disconnect();
       // disconnect() now handles all cleanup and waiting
     }
+
+    // SOCKS5 mode runs the client as a plain local proxy: no TUN device, no
+    // Wintun, no elevated privileges — all adapter handling below is skipped.
+    final socksMode = config.isSocksMode;
+    _activeConnectionMode = config.connectionMode;
+    _socksAddress = socksMode ? config.socksProxyAddress : null;
 
     try {
       _setStatus(VpnStatus.connecting);
@@ -98,7 +156,7 @@ class VpnService extends ChangeNotifier {
       }
 
       final hostname = config.hostname;
-      _addLog('🔄 Connecting to $hostname...');
+      _addLog('Connecting to $hostname...');
 
       // Check if trusttunnel.exe exists
       if (kDebugMode) {
@@ -121,38 +179,55 @@ class VpnService extends ChangeNotifier {
       // On macOS, the client needs full root (sudo) to set up TUN routes.
       // setuid is not enough — the client drops to the real uid when it shells
       // out to `ifconfig`, so configure passwordless sudo once instead.
-      if (Platform.isMacOS) {
+      // A SOCKS5 listener needs no special privileges — skip the escalation.
+      if (Platform.isMacOS && !socksMode) {
         await _ensureMacOSPrivileges(exePath);
       }
 
       final configPath = await _configService.getConfigFilePath();
 
       // Always write config file with current settings
-      _addLog('📝 Creating configuration file...');
+      _addLog('Creating configuration file...');
       await _configService.writeConfigFile(config);
+
+      // Oversized exclusion sets slow tunnel setup down — warn, don't block.
+      final merged = _configService.lastMergedExclusionCount;
+      if (merged > ConfigService.mergedExclusionsSoftLimit) {
+        _addLog('WARN $merged exclusions after merging routing lists (soft '
+            'limit ${ConfigService.mergedExclusionsSoftLimit}). Connection '
+            'setup may be slow; consider disabling some lists');
+      }
 
       // Pay the deferred Wintun-release cost (if any) right before launching.
       // disconnect() returns instantly and records _adapterBusyUntil; the wait
       // for the adapter to free up is paid here, lazily, and is usually already
       // elapsed (so this is a no-op) unless this is a fast disconnect→reconnect.
-      final adapterWait =
-          remainingAdapterWait(_adapterBusyUntil, DateTime.now());
-      if (adapterWait > Duration.zero) {
-        _addLog('⏳ Waiting for Wintun adapter to release...');
-        await Future.delayed(adapterWait);
-        _addLog('✅ Wintun adapter should be free now');
+      // A SOCKS5 launch never opens the adapter, so it skips the wait (and
+      // keeps the timestamp for a possible TUN connect right after).
+      if (!socksMode) {
+        final adapterWait =
+            remainingAdapterWait(_adapterBusyUntil, DateTime.now());
+        if (adapterWait > Duration.zero) {
+          _addLog('Waiting for Wintun adapter to release...');
+          await Future.delayed(adapterWait);
+          _addLog('Wintun adapter should be free now');
+        }
+        _adapterBusyUntil = null;
       }
-      _adapterBusyUntil = null;
 
       // disconnect() may have been called while we waited — don't launch a
       // process the user has already cancelled.
       if (_status != VpnStatus.connecting) {
-        _addLog('ℹ️ Connection cancelled before launch');
+        _addLog('Connection cancelled before launch');
         return;
       }
 
       // Start process
-      _addLog('🚀 Starting Trusty client...');
+      if (socksMode) {
+        _addLog('SOCKS5 mode: local proxy on ${config.socksProxyAddress} '
+            '(no VPN adapter; point your apps at the proxy)');
+      }
+      _addLog('Starting Trusty client...');
 
       if (kDebugMode) {
         print('Starting process: $exePath');
@@ -170,9 +245,11 @@ class VpnService extends ChangeNotifier {
             : null;
 
         // macOS runs the client through sudo (full root); the setuid path is
-        // insufficient. Other platforms launch the binary directly.
-        final launchExe = Platform.isMacOS ? 'sudo' : shortExe;
-        final launchArgs = Platform.isMacOS
+        // insufficient. Other platforms — and SOCKS5 mode, which needs no
+        // privileges at all — launch the binary directly.
+        final useSudo = Platform.isMacOS && !socksMode;
+        final launchExe = useSudo ? 'sudo' : shortExe;
+        final launchArgs = useSudo
             ? ['-n', exePath, '--config', configPath, '--loglevel', config.logLevel]
             : ['--config', shortConfig, '--loglevel', config.logLevel];
         _process = await Process.start(
@@ -260,59 +337,63 @@ class VpnService extends ChangeNotifier {
           print('Process exited with code: $exitCode');
         }
 
-        _addLog('🛑 Process exited with code: $exitCode');
+        _addLog('ERROR Process exited with code: $exitCode');
         _process = null;
 
+        // Classify regardless of the exit code: the CLI exits with code 0
+        // after a fatal certificate-verification failure.
+        final tail = Platform.isWindows ? 10 : 15;
+        final logsToCheck =
+            _logs.length > tail ? _logs.sublist(_logs.length - tail) : _logs;
+        final lastLogs = logsToCheck.join('\n').toLowerCase();
+
+        if (kDebugMode) {
+          print('Exit code check: exitCode=$exitCode, logs count=${_logs.length}');
+          print('Last $tail logs:\n${logsToCheck.join('\n')}');
+        }
+
+        final failure = classifyStartupFailure(
+          lastLogs,
+          windows: Platform.isWindows,
+          socksMode: socksMode,
+        );
+
+        if (failure == StartupFailure.certificateInvalid) {
+          _errorMessage =
+              'Server certificate verification failed (expired or untrusted).';
+          _addLog('The server\'s TLS certificate did not pass validation. '
+              'Most often it has expired.');
+          _addLog('Renew the certificate on the server (re-run the '
+              'certificate step of the deployment, or renew it over SSH). '
+              'As a temporary, insecure workaround you can enable "Skip '
+              'certificate verification" in the server settings.');
+          throw Exception('Server certificate verification failed');
+        }
+
         if (exitCode != 0) {
-          if (Platform.isWindows) {
-            // Check if it's a Wintun initialization error (Windows only)
-            final logsToCheck = _logs.length > 10 ? _logs.sublist(_logs.length - 10) : _logs;
-            final lastLogs = logsToCheck.join('\n').toLowerCase();
-
-            if (kDebugMode) {
-              print('Exit code check: exitCode=$exitCode, logs count=${_logs.length}');
-              print('Last 10 logs:\n${logsToCheck.join('\n')}');
-              print('Last logs contain "wintun": ${lastLogs.contains('wintun')}');
-            }
-
-            final isWintunBusy = lastLogs.contains('wintun') &&
-                                 (lastLogs.contains('already') || lastLogs.contains('already'));
-            final isAccessDenied = lastLogs.contains('access is denied') ||
-                                   lastLogs.contains('access denied') ||
-                                   lastLogs.contains('code 0x5') ||
-                                   lastLogs.contains('code 0x00000005');
-
-            if (isAccessDenied) {
+          switch (failure) {
+            case StartupFailure.accessDenied:
               _errorMessage = 'Access denied. Run the application as administrator.';
-              _addLog('🔒 Administrator privileges are required to create a VPN tunnel.');
-              _addLog('💡 Close the application and run it as administrator (right-click → Run as administrator).');
+              _addLog('Administrator privileges are required to create a VPN tunnel.');
+              _addLog('Close the application and run it as administrator (right-click → Run as administrator).');
               await Future.delayed(const Duration(seconds: 2));
-            } else if (isWintunBusy) {
+            case StartupFailure.wintunBusy:
               _errorMessage = 'Wintun adapter is still busy. Wait before retrying.';
-              _addLog('⏳ Waiting for Wintun adapter to release...');
+              _addLog('Waiting for Wintun adapter to release...');
               // CRITICAL: Wait for Wintun to fully release
               await Future.delayed(const Duration(seconds: 5));
-              _addLog('✅ Wintun adapter should be free now');
-            } else {
-              _errorMessage = 'Process exited with error (code: $exitCode)';
-              await Future.delayed(const Duration(seconds: 2));
-            }
-          } else {
-            // macOS/Linux: check for TUN permission errors (e.g. setuid was removed)
-            final logsToCheck = _logs.length > 15 ? _logs.sublist(_logs.length - 15) : _logs;
-            final lastLogs = logsToCheck.join('\n').toLowerCase();
-
-            final isTunPermissionDenied = lastLogs.contains('tun_open') &&
-                (lastLogs.contains('operation not permitted') || lastLogs.contains('(1) operation'));
-
-            if (isTunPermissionDenied && Platform.isMacOS) {
+              _addLog('Wintun adapter should be free now');
+            case StartupFailure.tunPermissionLost when Platform.isMacOS:
               _errorMessage = 'TUN device permission lost. Reconnect to re-grant access.';
-              _addLog('🔒 TUN permission was reset (e.g. after an app update). Reconnecting will show the password dialog again.');
+              _addLog('TUN permission was reset (e.g. after an app update). Reconnecting will show the password dialog again.');
               await Future.delayed(const Duration(seconds: 2));
-            } else {
+            case StartupFailure.tunPermissionLost:
+            case StartupFailure.certificateInvalid: // handled above
+            case StartupFailure.generic:
               _errorMessage = 'Process exited with error (code: $exitCode)';
-              await Future.delayed(const Duration(milliseconds: 500));
-            }
+              await Future.delayed(Platform.isWindows
+                  ? const Duration(seconds: 2)
+                  : const Duration(milliseconds: 500));
           }
         }
 
@@ -331,11 +412,11 @@ class VpnService extends ChangeNotifier {
           // touching shared state here would wipe the new process reference
           // and flip a live connection back to "disconnected".
           if (!identical(_process, process)) return;
-          _addLog('🛑 Process exited with code: $code');
+          _addLog('ERROR Process exited with code: $code');
           _process = null;
           _lastMsgPattern = null;
           _dupCount = 0;
-          if (Platform.isWindows) {
+          if (Platform.isWindows && !socksMode) {
             _adapterBusyUntil = DateTime.now().add(_adapterReleaseDuration);
           }
 
@@ -344,7 +425,13 @@ class VpnService extends ChangeNotifier {
           }
         });
 
-        _addLog('✅ Connected successfully!');
+        if (outcome.kind == _RaceOutcome.timeout) {
+          // Be honest: nothing confirmed the tunnel, the process is merely
+          // still alive after the timeout.
+          _addLog('No readiness confirmation from the client yet; assuming connected');
+        } else {
+          _addLog('Connected successfully!');
+        }
         _setStatus(VpnStatus.connected);
       } else if (!processExited) {
         throw Exception('Status changed during connection: $_status');
@@ -356,8 +443,11 @@ class VpnService extends ChangeNotifier {
         errorMsg = errorMsg.replaceFirst('Exception:', '').trim();
       }
 
-      _errorMessage = errorMsg;
-      _addLog('❌ Error: $errorMsg');
+      // The exit-code branch may have set a specific, actionable message
+      // ("run as administrator", "Wintun busy") — keep it over the generic
+      // exception text.
+      final message = _errorMessage ?? errorMsg;
+      _addLog('ERROR Error: $message');
 
       // Log stack trace for debugging
       if (kDebugMode) {
@@ -366,14 +456,18 @@ class VpnService extends ChangeNotifier {
 
       // If process is still running, kill it
       if (_process != null) {
-        _addLog('🔄 Terminating process after error...');
+        _addLog('Terminating process after error...');
         await disconnect();
       } else {
-        // Process already terminated, just update state
-        _setStatus(VpnStatus.disconnected);
+        // The CLI never started (or already exited), so disconnect() will
+        // not run — remove the TOML with the plaintext password ourselves.
+        await _configService.deleteConfigFile();
       }
 
-      rethrow;
+      // Land in a real error state so the Home screen shows the error card;
+      // disconnect() above resets both status and message, so set them last.
+      _errorMessage = message;
+      _setStatus(VpnStatus.error);
     }
   }
 
@@ -385,7 +479,7 @@ class VpnService extends ChangeNotifier {
 
     try {
       _setStatus(VpnStatus.disconnecting);
-      _addLog('🔄 Disconnecting...');
+      _addLog('Disconnecting...');
 
       final currentProcess = _process;
       if (currentProcess != null) {
@@ -393,19 +487,20 @@ class VpnService extends ChangeNotifier {
         // On Windows, kill() maps to TerminateProcess, which is effectively
         // synchronous, so there is no point waiting for a graceful exit. On
         // macOS we send SIGTERM (the client cleans up the utun device on it).
-        _addLog('📤 Sending termination signal...');
+        _addLog('Sending termination signal...');
         try {
           currentProcess.kill(
             Platform.isWindows ? ProcessSignal.sigkill : ProcessSignal.sigterm,
           );
         } catch (e) {
-          _addLog('⚠️ Failed to terminate process: $e');
+          _addLog('WARN Failed to terminate process: $e');
         }
 
         // Defer the Wintun-release cost: the adapter is busy for a few seconds
         // after the process dies, but we do NOT block here. The wait (if still
-        // pending) is paid lazily at the start of the next connect().
-        if (Platform.isWindows) {
+        // pending) is paid lazily at the start of the next connect(). A SOCKS5
+        // session never opened the adapter — nothing to release.
+        if (Platform.isWindows && _activeConnectionMode != 'socks5') {
           _adapterBusyUntil = DateTime.now().add(_adapterReleaseDuration);
         }
 
@@ -414,19 +509,23 @@ class VpnService extends ChangeNotifier {
         _process = null;
       } else {
         // No process to kill, just clean up state
-        _addLog('ℹ️ Process already terminated');
+        _addLog('Process already terminated');
       }
 
-      // Don't delete config file - keep it for next connection
-      // await _configService.deleteConfigFile();
+      // The TOML holds the password in plaintext and is rewritten on every
+      // connect anyway — remove it now that the client process is gone.
+      // deleteConfigFile swallows its own errors (the file may not exist).
+      await _configService.deleteConfigFile();
 
-      _addLog('✅ Disconnected');
+      _addLog('Disconnected');
+      _socksAddress = null;
       _setStatus(VpnStatus.disconnected);
       _errorMessage = null;
     } catch (e) {
-      _addLog('❌ Error during disconnect: $e');
+      _addLog('ERROR Error during disconnect: $e');
       // Force cleanup even on error
       _process = null;
+      _socksAddress = null;
       _setStatus(VpnStatus.disconnected);
     }
   }
@@ -475,7 +574,7 @@ class VpnService extends ChangeNotifier {
   Future<void> _ensureMacOSPrivileges(String exePath) async {
     if (await _hasSudoNopasswd(exePath)) return;
 
-    _addLog('🔐 One-time setup: requesting administrator access to enable VPN tunnel...');
+    _addLog('One-time setup: requesting administrator access to enable VPN tunnel...');
 
     final user = Platform.environment['USER'] ?? '';
 
@@ -515,23 +614,28 @@ class VpnService extends ChangeNotifier {
       throw Exception('Administrator access is required to create a VPN tunnel.\nPlease try again and enter your Mac password when prompted.');
     }
 
-    _addLog('✅ Setup complete. VPN tunnel access granted.');
+    _addLog('Setup complete. VPN tunnel access granted.');
   }
 
-  /// Format log line based on log level
+  /// Put the level token the console reads in front of a raw CLI line.
+  /// Lines the CLI already tags INFO, and anything in an unrecognized
+  /// format, pass through: `logLevelOf` reads them as info either way.
   String _formatLogLine(String line) {
+    // Known-benign lines tagged ERROR upstream (Wintun's adapter probe)
+    // must not be marked as errors.
+    if (isBenignCliNoise(line)) {
+      return line;
+    }
     // Check for log level in the line
     if (line.contains(' ERROR ')) {
-      return '❌ $line';
+      return 'ERROR $line';
     } else if (line.contains(' WARN ')) {
-      return '⚠️ $line';
-    } else if (line.contains(' INFO ')) {
-      return 'ℹ️ $line';
+      return 'WARN $line';
     } else if (line.contains(' DEBUG ') || line.contains(' TRACE ')) {
-      return '🔍 $line';
+      return 'DEBUG $line';
     }
-    // Default - no prefix for unrecognized format
-    return '📋 $line';
+    // INFO lines and unrecognized formats carry no token.
+    return line;
   }
 
   /// Add log entry, collapsing consecutive lines that differ only in numbers.
@@ -593,6 +697,8 @@ class VpnService extends ChangeNotifier {
   /// Set status and notify listeners
   void _setStatus(VpnStatus newStatus) {
     if (_status != newStatus) {
+      _connectedAt =
+          newStatus == VpnStatus.connected ? DateTime.now() : null;
       _status = newStatus;
       notifyListeners();
     }
@@ -609,7 +715,7 @@ class VpnService extends ChangeNotifier {
       if (kDebugMode) {
         print('Shutdown: starting cleanup, PID: ${currentProcess.pid}');
       }
-      _addLog('🔄 Shutting down...');
+      _addLog('Shutting down...');
 
       // Kill hard — we are exiting and don't wait for the process to drain.
       try {
@@ -620,7 +726,7 @@ class VpnService extends ChangeNotifier {
           print('Shutdown: sent kill signal');
         }
       } catch (e) {
-        _addLog('⚠️ Error terminating process: $e');
+        _addLog('WARN Error terminating process: $e');
         if (kDebugMode) {
           print('Shutdown: kill failed: $e');
         }
@@ -629,6 +735,11 @@ class VpnService extends ChangeNotifier {
       _process = null;
     }
 
+    // Never leave the plaintext-password TOML behind after exit (a failed
+    // connect may have written it even when no process is running).
+    await _configService.deleteConfigFile();
+
+    _socksAddress = null;
     _setStatus(VpnStatus.disconnected);
 
     if (kDebugMode) {
@@ -666,6 +777,16 @@ class VpnService extends ChangeNotifier {
     _process = null;
     super.dispose();
   }
+}
+
+/// Actionable kinds of an immediate CLI startup failure
+/// (see [VpnService.classifyStartupFailure]).
+enum StartupFailure {
+  accessDenied,
+  wintunBusy,
+  tunPermissionLost,
+  certificateInvalid,
+  generic,
 }
 
 /// Which arm of the connect() readiness race won.

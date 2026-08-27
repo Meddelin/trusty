@@ -178,6 +178,12 @@ abstract class AppLocalizations {
   /// **'Home'**
   String get navHome;
 
+  /// No description provided for @navServers.
+  ///
+  /// In en, this message translates to:
+  /// **'Servers'**
+  String get navServers;
+
   /// No description provided for @navSettings.
   ///
   /// In en, this message translates to:
@@ -199,7 +205,7 @@ abstract class AppLocalizations {
   /// No description provided for @navServer.
   ///
   /// In en, this message translates to:
-  /// **'Server'**
+  /// **'Deploy'**
   String get navServer;
 
   /// No description provided for @vpnStatusDisconnected.
@@ -211,7 +217,7 @@ abstract class AppLocalizations {
   /// No description provided for @vpnStatusConnecting.
   ///
   /// In en, this message translates to:
-  /// **'Connecting...'**
+  /// **'Connecting…'**
   String get vpnStatusConnecting;
 
   /// No description provided for @vpnStatusConnected.
@@ -337,19 +343,19 @@ abstract class AppLocalizations {
   /// No description provided for @homeInfoLine1.
   ///
   /// In en, this message translates to:
-  /// **'Configure server settings in the \"Settings\" tab'**
+  /// **'Add your server on the Servers tab first'**
   String get homeInfoLine1;
 
   /// No description provided for @homeInfoLineClientWindows.
   ///
   /// In en, this message translates to:
-  /// **'Make sure trusttunnel_client.exe is in the client/ directory'**
+  /// **'trusttunnel_client.exe belongs in the client/ directory'**
   String get homeInfoLineClientWindows;
 
   /// No description provided for @homeInfoLineClientOther.
   ///
   /// In en, this message translates to:
-  /// **'Make sure trusttunnel_client is in the client/ directory'**
+  /// **'trusttunnel_client belongs in the client/ directory'**
   String get homeInfoLineClientOther;
 
   /// No description provided for @homeInfoLine3.
@@ -397,13 +403,13 @@ abstract class AppLocalizations {
   /// No description provided for @logsTotalEntries.
   ///
   /// In en, this message translates to:
-  /// **'Total entries: {count}'**
+  /// **'{count} lines · this session only'**
   String logsTotalEntries(int count);
 
   /// No description provided for @logsEmpty.
   ///
   /// In en, this message translates to:
-  /// **'Logs are empty'**
+  /// **'No logs yet'**
   String get logsEmpty;
 
   /// No description provided for @logsConnectToSee.
@@ -460,6 +466,30 @@ abstract class AppLocalizations {
   /// **'Save'**
   String get commonSave;
 
+  /// No description provided for @commonRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get commonRename;
+
+  /// No description provided for @settingsServerName.
+  ///
+  /// In en, this message translates to:
+  /// **'Server name (optional)'**
+  String get settingsServerName;
+
+  /// No description provided for @settingsDnsHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'One or more upstreams, separated by commas: a plain IP, tls://, https:// or quic://. Takes effect when you next connect.'**
+  String get settingsDnsHelper;
+
+  /// No description provided for @settingsPrefixHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'The exact hex prefix[/mask] from your server\'s rules.toml. Only servers that use connection filtering need one.'**
+  String get settingsPrefixHelper;
+
   /// No description provided for @commonDelete.
   ///
   /// In en, this message translates to:
@@ -469,14 +499,8 @@ abstract class AppLocalizations {
   /// No description provided for @settingsWarningConnected.
   ///
   /// In en, this message translates to:
-  /// **'Disconnect from VPN before changing settings'**
+  /// **'Server settings are locked while connected. Disconnect to edit.'**
   String get settingsWarningConnected;
-
-  /// No description provided for @settingsSectionServer.
-  ///
-  /// In en, this message translates to:
-  /// **'Server'**
-  String get settingsSectionServer;
 
   /// No description provided for @settingsHostname.
   ///
@@ -493,7 +517,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsAddress.
   ///
   /// In en, this message translates to:
-  /// **'IP Address'**
+  /// **'IP address'**
   String get settingsAddress;
 
   /// No description provided for @settingsAddressError.
@@ -520,12 +544,6 @@ abstract class AppLocalizations {
   /// **'Invalid port'**
   String get settingsPortErrorInvalid;
 
-  /// No description provided for @settingsSectionAuth.
-  ///
-  /// In en, this message translates to:
-  /// **'Authentication'**
-  String get settingsSectionAuth;
-
   /// No description provided for @settingsUsername.
   ///
   /// In en, this message translates to:
@@ -550,23 +568,29 @@ abstract class AppLocalizations {
   /// **'Enter password'**
   String get settingsPasswordError;
 
-  /// No description provided for @settingsSectionNetwork.
-  ///
-  /// In en, this message translates to:
-  /// **'Network'**
-  String get settingsSectionNetwork;
-
   /// No description provided for @settingsDns.
   ///
   /// In en, this message translates to:
-  /// **'DNS Server'**
+  /// **'DNS upstreams'**
   String get settingsDns;
 
   /// No description provided for @settingsDnsError.
   ///
   /// In en, this message translates to:
-  /// **'Enter DNS server'**
+  /// **'Enter at least one upstream'**
   String get settingsDnsError;
+
+  /// No description provided for @settingsDnsPresetTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a DNS preset'**
+  String get settingsDnsPresetTooltip;
+
+  /// No description provided for @settingsDnsPresetDuplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'This DNS server is already in the list'**
+  String get settingsDnsPresetDuplicate;
 
   /// No description provided for @settingsProtocol.
   ///
@@ -577,8 +601,116 @@ abstract class AppLocalizations {
   /// No description provided for @settingsLogLevel.
   ///
   /// In en, this message translates to:
-  /// **'Log Level'**
+  /// **'Log level'**
   String get settingsLogLevel;
+
+  /// No description provided for @settingsLogLevelHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'One level for every server. It takes effect when you next connect.'**
+  String get settingsLogLevelHelper;
+
+  /// No description provided for @settingsConnectionMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection mode'**
+  String get settingsConnectionMode;
+
+  /// No description provided for @settingsConnectionModeTun.
+  ///
+  /// In en, this message translates to:
+  /// **'VPN (TUN)'**
+  String get settingsConnectionModeTun;
+
+  /// No description provided for @settingsConnectionModeSocks.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy (SOCKS5)'**
+  String get settingsConnectionModeSocks;
+
+  /// No description provided for @settingsConnectionModeTunHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Routes system traffic through a virtual network adapter, leaving addresses on your local network off the tunnel. Requires administrator rights.'**
+  String get settingsConnectionModeTunHint;
+
+  /// No description provided for @settingsConnectionModeSocksHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Runs a local proxy on 127.0.0.1 without creating a network adapter, so only the apps you point at it go through the tunnel. On Windows the app still starts with administrator rights.'**
+  String get settingsConnectionModeSocksHint;
+
+  /// No description provided for @settingsConnectionModeLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect to change the connection mode.'**
+  String get settingsConnectionModeLocked;
+
+  /// No description provided for @settingsSocksPort.
+  ///
+  /// In en, this message translates to:
+  /// **'SOCKS5 port'**
+  String get settingsSocksPort;
+
+  /// No description provided for @settingsSocksPortHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'The proxy listens on 127.0.0.1 and nothing else. Reconnect for a change to take effect.'**
+  String get settingsSocksPortHelper;
+
+  /// No description provided for @settingsSocksPortError.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a port between 1 and 65535'**
+  String get settingsSocksPortError;
+
+  /// No description provided for @settingsCloseAction.
+  ///
+  /// In en, this message translates to:
+  /// **'On window close'**
+  String get settingsCloseAction;
+
+  /// No description provided for @settingsCloseActionHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask each time, minimize to the tray, or exit. This one takes effect straight away.'**
+  String get settingsCloseActionHelper;
+
+  /// No description provided for @settingsCloseActionAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'ask'**
+  String get settingsCloseActionAsk;
+
+  /// No description provided for @settingsCloseActionMinimize.
+  ///
+  /// In en, this message translates to:
+  /// **'minimize'**
+  String get settingsCloseActionMinimize;
+
+  /// No description provided for @settingsCloseActionExit.
+  ///
+  /// In en, this message translates to:
+  /// **'exit'**
+  String get settingsCloseActionExit;
+
+  /// No description provided for @settingsAppSection.
+  ///
+  /// In en, this message translates to:
+  /// **'App settings'**
+  String get settingsAppSection;
+
+  /// No description provided for @settingsAppSectionSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared by every server'**
+  String get settingsAppSectionSubtitle;
+
+  /// No description provided for @settingsAppliesNextConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Applies on your next connect'**
+  String get settingsAppliesNextConnect;
 
   /// No description provided for @settingsSectionAdvanced.
   ///
@@ -610,6 +742,12 @@ abstract class AppLocalizations {
   /// **'Post-Quantum Key Exchange'**
   String get settingsPostQuantum;
 
+  /// No description provided for @settingsPostQuantumHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Hybrid key exchange that protects the TLS handshake against future quantum computers (harvest-now-decrypt-later). The handshake grows a little, which is why it stays on by default.'**
+  String get settingsPostQuantumHint;
+
   /// No description provided for @settingsCustomSni.
   ///
   /// In en, this message translates to:
@@ -619,13 +757,13 @@ abstract class AppLocalizations {
   /// No description provided for @settingsSave.
   ///
   /// In en, this message translates to:
-  /// **'Save Settings'**
+  /// **'Save server'**
   String get settingsSave;
 
   /// No description provided for @settingsSaved.
   ///
   /// In en, this message translates to:
-  /// **'Settings saved'**
+  /// **'Server saved'**
   String get settingsSaved;
 
   /// No description provided for @settingsSaveError.
@@ -637,38 +775,62 @@ abstract class AppLocalizations {
   /// No description provided for @splitTunnelWarningConnected.
   ///
   /// In en, this message translates to:
-  /// **'Disconnect from VPN before changing settings'**
+  /// **'Changes are saved now and take effect the next time you connect'**
   String get splitTunnelWarningConnected;
+
+  /// No description provided for @splitTunnelSocksModeBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy mode is active. Only apps you point at 127.0.0.1 go through the tunnel; these rules apply to the traffic that reaches the proxy.'**
+  String get splitTunnelSocksModeBanner;
 
   /// No description provided for @splitTunnelVpnMode.
   ///
   /// In en, this message translates to:
-  /// **'VPN Mode'**
+  /// **'Tunnel mode'**
   String get splitTunnelVpnMode;
 
   /// No description provided for @splitTunnelModeGeneralTitle.
   ///
   /// In en, this message translates to:
-  /// **'All traffic through VPN'**
+  /// **'General'**
   String get splitTunnelModeGeneralTitle;
 
   /// No description provided for @splitTunnelModeGeneralSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Exclusions will not go through VPN'**
+  /// **'Everything goes through the VPN except your list'**
   String get splitTunnelModeGeneralSubtitle;
+
+  /// No description provided for @splitTunnelModeGeneralSubtitleProxy.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything goes through the proxy except your list'**
+  String get splitTunnelModeGeneralSubtitleProxy;
 
   /// No description provided for @splitTunnelModeSelectiveTitle.
   ///
   /// In en, this message translates to:
-  /// **'Only selected traffic through VPN'**
+  /// **'Selective'**
   String get splitTunnelModeSelectiveTitle;
 
   /// No description provided for @splitTunnelModeSelectiveSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Only specified domains/apps through VPN'**
+  /// **'Only your list goes through the VPN'**
   String get splitTunnelModeSelectiveSubtitle;
+
+  /// No description provided for @splitTunnelModeSelectiveSubtitleProxy.
+  ///
+  /// In en, this message translates to:
+  /// **'Only your list goes through the proxy'**
+  String get splitTunnelModeSelectiveSubtitleProxy;
+
+  /// No description provided for @splitTunnelModeSameList.
+  ///
+  /// In en, this message translates to:
+  /// **'The same entries are exclusions in General mode, inclusions in Selective'**
+  String get splitTunnelModeSameList;
 
   /// No description provided for @splitTunnelDomainsTab.
   ///
@@ -685,25 +847,25 @@ abstract class AppLocalizations {
   /// No description provided for @splitTunnelAutoSave.
   ///
   /// In en, this message translates to:
-  /// **'Settings are saved automatically'**
+  /// **'Saved as you go, and picked up by your next connection'**
   String get splitTunnelAutoSave;
 
   /// No description provided for @splitTunnelDomainsExclude.
   ///
   /// In en, this message translates to:
-  /// **'Domains that will NOT go through VPN:'**
+  /// **'Domains kept off the VPN'**
   String get splitTunnelDomainsExclude;
 
   /// No description provided for @splitTunnelDomainsInclude.
   ///
   /// In en, this message translates to:
-  /// **'Domains that WILL go through VPN:'**
+  /// **'Domains sent through the VPN'**
   String get splitTunnelDomainsInclude;
 
   /// No description provided for @splitTunnelDomainsHint.
   ///
   /// In en, this message translates to:
-  /// **'Domains (google.com), IPs (8.8.8.8), CIDR (10.0.0.0/8)'**
+  /// **'A domain, wildcard, IP, CIDR range or process name'**
   String get splitTunnelDomainsHint;
 
   /// No description provided for @splitTunnelDomainsInputHint.
@@ -766,10 +928,34 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 domain} other{{count} domains}}'**
   String splitTunnelDomainCount(int count);
 
+  /// No description provided for @splitTunnelSourcePreset.
+  ///
+  /// In en, this message translates to:
+  /// **'Preset'**
+  String get splitTunnelSourcePreset;
+
+  /// No description provided for @splitTunnelPresetPick.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready-made list'**
+  String get splitTunnelPresetPick;
+
+  /// No description provided for @splitTunnelPresetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready-made sets of domains and IP ranges from the v2fly community: domain categories (geosite) and per-country IP ranges (geoip). Domain rules are imported; regexp and keyword rules are skipped.'**
+  String get splitTunnelPresetHint;
+
+  /// No description provided for @splitTunnelExclusionLimitWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging left {count} domains and IP ranges, past the {limit} the client handles comfortably. Connecting may take longer; switch a routing list off to bring it down.'**
+  String splitTunnelExclusionLimitWarning(int count, int limit);
+
   /// No description provided for @splitTunnelSuggestionTitle.
   ///
   /// In en, this message translates to:
-  /// **'Detected in logs — Add to exclusions?'**
+  /// **'Seen in the logs. Add to your list?'**
   String get splitTunnelSuggestionTitle;
 
   /// No description provided for @splitTunnelSuggestionAddToGroup.
@@ -805,14 +991,20 @@ abstract class AppLocalizations {
   /// No description provided for @splitTunnelAppsExclude.
   ///
   /// In en, this message translates to:
-  /// **'Apps that will NOT use VPN:'**
+  /// **'Apps kept off the VPN'**
   String get splitTunnelAppsExclude;
 
   /// No description provided for @splitTunnelAppsInclude.
   ///
   /// In en, this message translates to:
-  /// **'Apps that WILL use VPN:'**
+  /// **'Apps sent through the VPN'**
   String get splitTunnelAppsInclude;
+
+  /// No description provided for @splitTunnelAppsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Apps are matched by process name, like chrome.exe or Discord. If one is missing, start it and search again: running programs show the exact name.'**
+  String get splitTunnelAppsHint;
 
   /// No description provided for @splitTunnelSearchApps.
   ///
@@ -823,7 +1015,7 @@ abstract class AppLocalizations {
   /// No description provided for @splitTunnelNoApps.
   ///
   /// In en, this message translates to:
-  /// **'No apps found'**
+  /// **'Couldn\'t list your apps. Press refresh, or type a process name and press +.'**
   String get splitTunnelNoApps;
 
   /// No description provided for @splitTunnelSelectedApps.
@@ -889,7 +1081,7 @@ abstract class AppLocalizations {
   /// No description provided for @serverInfoBanner.
   ///
   /// In en, this message translates to:
-  /// **'TrustTunnel server installation on a remote VPS. Requires a VPS with Linux (Ubuntu/Debian), a domain name and SSH access (root).'**
+  /// **'Installs and configures a TrustTunnel server on your VPS over SSH. You need Debian or Ubuntu on x86_64 or ARM64, root SSH access, and a domain already pointing at the machine.'**
   String get serverInfoBanner;
 
   /// No description provided for @serverSectionSsh.
@@ -979,7 +1171,7 @@ abstract class AppLocalizations {
   /// No description provided for @serverDomainHint.
   ///
   /// In en, this message translates to:
-  /// **'Domain must point to server IP (A record in DNS)'**
+  /// **'Point this domain at your server\'s IP before you deploy, or the certificate step will fail.'**
   String get serverDomainHint;
 
   /// No description provided for @serverEmail.
@@ -1030,6 +1222,30 @@ abstract class AppLocalizations {
   /// **'Generate password'**
   String get serverGeneratePassword;
 
+  /// No description provided for @serverSshSecretsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'SSH details are used for this deployment only and are never saved'**
+  String get serverSshSecretsHint;
+
+  /// No description provided for @serverFilteringHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The server answers only connections carrying this secret marker and ignores everything else. Apply fills it in for you.'**
+  String get serverFilteringHint;
+
+  /// No description provided for @serverFilteringWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Save it somewhere. Any device configured without this exact value gets ignored.'**
+  String get serverFilteringWarning;
+
+  /// No description provided for @serverRestoredNote.
+  ///
+  /// In en, this message translates to:
+  /// **'These values were restored after a restart. Enter the VPN password again on the Servers tab.'**
+  String get serverRestoredNote;
+
   /// No description provided for @serverInstallButton.
   ///
   /// In en, this message translates to:
@@ -1057,7 +1273,7 @@ abstract class AppLocalizations {
   /// No description provided for @serverInstalled.
   ///
   /// In en, this message translates to:
-  /// **'Server installed and running!'**
+  /// **'Server installed. The service started.'**
   String get serverInstalled;
 
   /// No description provided for @serverSuccessInfo.
@@ -1069,13 +1285,19 @@ abstract class AppLocalizations {
   /// No description provided for @serverApplySettings.
   ///
   /// In en, this message translates to:
-  /// **'Apply Client Settings'**
+  /// **'Add to my servers'**
   String get serverApplySettings;
+
+  /// No description provided for @serverApplyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Adds this server to your list, or updates the entry with the same domain, and makes it active. You connect from the main screen.'**
+  String get serverApplyHint;
 
   /// No description provided for @serverSettingsApplied.
   ///
   /// In en, this message translates to:
-  /// **'Client settings updated'**
+  /// **'Server added and selected'**
   String get serverSettingsApplied;
 
   /// No description provided for @serverError.
@@ -1095,6 +1317,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Download'**
   String get homeUpdateDownload;
+
+  /// No description provided for @homeSocksProxy.
+  ///
+  /// In en, this message translates to:
+  /// **'SOCKS5 proxy · {address}'**
+  String homeSocksProxy(String address);
 }
 
 class _AppLocalizationsDelegate

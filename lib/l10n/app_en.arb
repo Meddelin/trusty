@@ -14,12 +14,13 @@
   "dialogCloseMinimize": "Minimize to Tray",
   "dialogCloseExit": "Exit",
   "navHome": "Home",
+  "navServers": "Servers",
   "navSettings": "Settings",
   "navSplitTunnel": "Split Tunnel",
   "navLogs": "Logs",
-  "navServer": "Server",
+  "navServer": "Deploy",
   "vpnStatusDisconnected": "Disconnected",
-  "vpnStatusConnecting": "Connecting...",
+  "vpnStatusConnecting": "Connecting…",
   "vpnStatusConnected": "Connected",
   "vpnStatusDisconnecting": "Disconnecting...",
   "vpnStatusError": "Error",
@@ -40,9 +41,9 @@
   "homeDisconnect": "Disconnect",
   "homeConnect": "Connect",
   "homeInfoTitle": "Information",
-  "homeInfoLine1": "Configure server settings in the \"Settings\" tab",
-  "homeInfoLineClientWindows": "Make sure trusttunnel_client.exe is in the client/ directory",
-  "homeInfoLineClientOther": "Make sure trusttunnel_client is in the client/ directory",
+  "homeInfoLine1": "Add your server on the Servers tab first",
+  "homeInfoLineClientWindows": "trusttunnel_client.exe belongs in the client/ directory",
+  "homeInfoLineClientOther": "trusttunnel_client belongs in the client/ directory",
   "homeInfoLine3": "Connection logs are available in the \"Logs\" tab",
   "homeError": "Error: {error}",
   "@homeError": {
@@ -57,7 +58,7 @@
   "logsAutoScrollDisabled": "Auto-scroll disabled",
   "logsCopy": "Copy logs",
   "logsClear": "Clear logs",
-  "logsTotalEntries": "Total entries: {count}",
+  "logsTotalEntries": "{count} lines · this session only",
   "@logsTotalEntries": {
     "placeholders": {
       "count": {
@@ -65,7 +66,7 @@
       }
     }
   },
-  "logsEmpty": "Logs are empty",
+  "logsEmpty": "No logs yet",
   "logsConnectToSee": "Connect to VPN to see logs",
   "logsClearTitle": "Clear logs?",
   "logsClearMessage": "All log entries will be deleted. This action cannot be undone.",
@@ -75,34 +76,56 @@
   "commonClear": "Clear",
   "commonAdd": "Add",
   "commonSave": "Save",
+  "commonRename": "Rename",
+  "settingsServerName": "Server name (optional)",
+  "settingsDnsHelper": "One or more upstreams, separated by commas: a plain IP, tls://, https:// or quic://. Takes effect when you next connect.",
+  "settingsPrefixHelper": "The exact hex prefix[/mask] from your server's rules.toml. Only servers that use connection filtering need one.",
   "commonDelete": "Delete",
-  "settingsWarningConnected": "Disconnect from VPN before changing settings",
-  "settingsSectionServer": "Server",
+  "settingsWarningConnected": "Server settings are locked while connected. Disconnect to edit.",
   "settingsHostname": "Hostname",
   "settingsHostnameError": "Enter hostname",
-  "settingsAddress": "IP Address",
+  "settingsAddress": "IP address",
   "settingsAddressError": "Enter IP address",
   "settingsPort": "Port",
   "settingsPortErrorEmpty": "Enter port",
   "settingsPortErrorInvalid": "Invalid port",
-  "settingsSectionAuth": "Authentication",
   "settingsUsername": "Username",
   "settingsUsernameError": "Enter username",
   "settingsPassword": "Password",
   "settingsPasswordError": "Enter password",
-  "settingsSectionNetwork": "Network",
-  "settingsDns": "DNS Server",
-  "settingsDnsError": "Enter DNS server",
+  "settingsDns": "DNS upstreams",
+  "settingsDnsError": "Enter at least one upstream",
+  "settingsDnsPresetTooltip": "Add a DNS preset",
+  "settingsDnsPresetDuplicate": "This DNS server is already in the list",
   "settingsProtocol": "Protocol",
-  "settingsLogLevel": "Log Level",
+  "settingsLogLevel": "Log level",
+  "settingsLogLevelHelper": "One level for every server. It takes effect when you next connect.",
+  "settingsConnectionMode": "Connection mode",
+  "settingsConnectionModeTun": "VPN (TUN)",
+  "settingsConnectionModeSocks": "Proxy (SOCKS5)",
+  "settingsConnectionModeTunHint": "Routes system traffic through a virtual network adapter, leaving addresses on your local network off the tunnel. Requires administrator rights.",
+  "settingsConnectionModeSocksHint": "Runs a local proxy on 127.0.0.1 without creating a network adapter, so only the apps you point at it go through the tunnel. On Windows the app still starts with administrator rights.",
+  "settingsConnectionModeLocked": "Disconnect to change the connection mode.",
+  "settingsSocksPort": "SOCKS5 port",
+  "settingsSocksPortHelper": "The proxy listens on 127.0.0.1 and nothing else. Reconnect for a change to take effect.",
+  "settingsSocksPortError": "Enter a port between 1 and 65535",
+  "settingsCloseAction": "On window close",
+  "settingsCloseActionHelper": "Ask each time, minimize to the tray, or exit. This one takes effect straight away.",
+  "settingsCloseActionAsk": "ask",
+  "settingsCloseActionMinimize": "minimize",
+  "settingsCloseActionExit": "exit",
+  "settingsAppSection": "App settings",
+  "settingsAppSectionSubtitle": "Shared by every server",
+  "settingsAppliesNextConnect": "Applies on your next connect",
   "settingsSectionAdvanced": "Advanced",
   "settingsIpv6": "IPv6 Support",
   "settingsSkipVerification": "Skip Certificate Verification",
   "settingsAntiDpi": "Anti-DPI",
   "settingsPostQuantum": "Post-Quantum Key Exchange",
+  "settingsPostQuantumHint": "Hybrid key exchange that protects the TLS handshake against future quantum computers (harvest-now-decrypt-later). The handshake grows a little, which is why it stays on by default.",
   "settingsCustomSni": "Custom SNI (optional)",
-  "settingsSave": "Save Settings",
-  "settingsSaved": "Settings saved",
+  "settingsSave": "Save server",
+  "settingsSaved": "Server saved",
   "settingsSaveError": "Save error: {error}",
   "@settingsSaveError": {
     "placeholders": {
@@ -111,12 +134,16 @@
       }
     }
   },
-  "splitTunnelWarningConnected": "Disconnect from VPN before changing settings",
-  "splitTunnelVpnMode": "VPN Mode",
-  "splitTunnelModeGeneralTitle": "All traffic through VPN",
-  "splitTunnelModeGeneralSubtitle": "Exclusions will not go through VPN",
-  "splitTunnelModeSelectiveTitle": "Only selected traffic through VPN",
-  "splitTunnelModeSelectiveSubtitle": "Only specified domains/apps through VPN",
+  "splitTunnelWarningConnected": "Changes are saved now and take effect the next time you connect",
+  "splitTunnelSocksModeBanner": "Proxy mode is active. Only apps you point at 127.0.0.1 go through the tunnel; these rules apply to the traffic that reaches the proxy.",
+  "splitTunnelVpnMode": "Tunnel mode",
+  "splitTunnelModeGeneralTitle": "General",
+  "splitTunnelModeGeneralSubtitle": "Everything goes through the VPN except your list",
+  "splitTunnelModeGeneralSubtitleProxy": "Everything goes through the proxy except your list",
+  "splitTunnelModeSelectiveTitle": "Selective",
+  "splitTunnelModeSelectiveSubtitle": "Only your list goes through the VPN",
+  "splitTunnelModeSelectiveSubtitleProxy": "Only your list goes through the proxy",
+  "splitTunnelModeSameList": "The same entries are exclusions in General mode, inclusions in Selective",
   "splitTunnelDomainsTab": "Domains ({count})",
   "@splitTunnelDomainsTab": {
     "placeholders": {
@@ -133,10 +160,10 @@
       }
     }
   },
-  "splitTunnelAutoSave": "Settings are saved automatically",
-  "splitTunnelDomainsExclude": "Domains that will NOT go through VPN:",
-  "splitTunnelDomainsInclude": "Domains that WILL go through VPN:",
-  "splitTunnelDomainsHint": "Domains (google.com), IPs (8.8.8.8), CIDR (10.0.0.0/8)",
+  "splitTunnelAutoSave": "Saved as you go, and picked up by your next connection",
+  "splitTunnelDomainsExclude": "Domains kept off the VPN",
+  "splitTunnelDomainsInclude": "Domains sent through the VPN",
+  "splitTunnelDomainsHint": "A domain, wildcard, IP, CIDR range or process name",
   "splitTunnelDomainsInputHint": "Enter domain, IP or CIDR",
   "splitTunnelNoDomains": "No domains added",
   "splitTunnelOther": "Other",
@@ -168,7 +195,21 @@
       }
     }
   },
-  "splitTunnelSuggestionTitle": "Detected in logs — Add to exclusions?",
+  "splitTunnelSourcePreset": "Preset",
+  "splitTunnelPresetPick": "Ready-made list",
+  "splitTunnelPresetHint": "Ready-made sets of domains and IP ranges from the v2fly community: domain categories (geosite) and per-country IP ranges (geoip). Domain rules are imported; regexp and keyword rules are skipped.",
+  "splitTunnelExclusionLimitWarning": "Merging left {count} domains and IP ranges, past the {limit} the client handles comfortably. Connecting may take longer; switch a routing list off to bring it down.",
+  "@splitTunnelExclusionLimitWarning": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "splitTunnelSuggestionTitle": "Seen in the logs. Add to your list?",
   "splitTunnelSuggestionAddToGroup": "Add to group",
   "splitTunnelSuggestionAddStandalone": "Add standalone",
   "splitTunnelSuggestionHide": "Hide",
@@ -181,10 +222,11 @@
       }
     }
   },
-  "splitTunnelAppsExclude": "Apps that will NOT use VPN:",
-  "splitTunnelAppsInclude": "Apps that WILL use VPN:",
+  "splitTunnelAppsExclude": "Apps kept off the VPN",
+  "splitTunnelAppsInclude": "Apps sent through the VPN",
+  "splitTunnelAppsHint": "Apps are matched by process name, like chrome.exe or Discord. If one is missing, start it and search again: running programs show the exact name.",
   "splitTunnelSearchApps": "Search apps...",
-  "splitTunnelNoApps": "No apps found",
+  "splitTunnelNoApps": "Couldn't list your apps. Press refresh, or type a process name and press +.",
   "splitTunnelSelectedApps": "Selected apps: {count}",
   "@splitTunnelSelectedApps": {
     "placeholders": {
@@ -216,7 +258,7 @@
   "discoveryAddStandalone": "Domain will be added standalone.",
   "discoveryWithoutGroup": "Without group",
   "discoveryAddGroup": "Add group",
-  "serverInfoBanner": "TrustTunnel server installation on a remote VPS. Requires a VPS with Linux (Ubuntu/Debian), a domain name and SSH access (root).",
+  "serverInfoBanner": "Installs and configures a TrustTunnel server on your VPS over SSH. You need Debian or Ubuntu on x86_64 or ARM64, root SSH access, and a domain already pointing at the machine.",
   "serverSectionSsh": "SSH Connection",
   "serverVpsIp": "VPS IP Address",
   "serverVpsIpError": "Enter IP address",
@@ -231,7 +273,7 @@
   "serverSectionDomain": "Domain and Certificate",
   "serverDomain": "Domain",
   "serverDomainError": "Enter domain",
-  "serverDomainHint": "Domain must point to server IP (A record in DNS)",
+  "serverDomainHint": "Point this domain at your server's IP before you deploy, or the certificate step will fail.",
   "serverEmail": "Email (Let's Encrypt)",
   "serverEmailError": "Enter email",
   "serverSectionVpnAccount": "VPN Account",
@@ -240,11 +282,15 @@
   "serverVpnPassword": "VPN Password",
   "serverVpnPasswordError": "Enter password",
   "serverGeneratePassword": "Generate password",
+  "serverSshSecretsHint": "SSH details are used for this deployment only and are never saved",
+  "serverFilteringHint": "The server answers only connections carrying this secret marker and ignores everything else. Apply fills it in for you.",
+  "serverFilteringWarning": "Save it somewhere. Any device configured without this exact value gets ignored.",
+  "serverRestoredNote": "These values were restored after a restart. Enter the VPN password again on the Servers tab.",
   "serverInstallButton": "Install Server",
   "serverInstalling": "Installing...",
   "serverInstallLog": "Installation Log",
   "serverLogEmpty": "Log is empty",
-  "serverInstalled": "Server installed and running!",
+  "serverInstalled": "Server installed. The service started.",
   "serverSuccessInfo": "Domain: {domain}\nPort: {port}\nVPN username: {username}",
   "@serverSuccessInfo": {
     "placeholders": {
@@ -259,8 +305,9 @@
       }
     }
   },
-  "serverApplySettings": "Apply Client Settings",
-  "serverSettingsApplied": "Client settings updated",
+  "serverApplySettings": "Add to my servers",
+  "serverApplyHint": "Adds this server to your list, or updates the entry with the same domain, and makes it active. You connect from the main screen.",
+  "serverSettingsApplied": "Server added and selected",
   "serverError": "Error: {error}",
   "@serverError": {
     "placeholders": {
@@ -277,5 +324,13 @@
       }
     }
   },
-  "homeUpdateDownload": "Download"
+  "homeUpdateDownload": "Download",
+  "homeSocksProxy": "SOCKS5 proxy · {address}",
+  "@homeSocksProxy": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  }
 }

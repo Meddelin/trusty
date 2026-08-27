@@ -32,6 +32,137 @@ void main() {
     });
   });
 
+  group('classifyStartupFailure', () {
+    test('detects a certificate failure in TUN mode', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'error vpncore ssl_verify_callback: [0] failed to verify certificate',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.certificateInvalid,
+      );
+    });
+
+    test('detects a certificate failure in SOCKS5 mode too', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'failed to verify certificate: wcrypt_e_trust_status',
+          windows: true,
+          socksMode: true,
+        ),
+        StartupFailure.certificateInvalid,
+      );
+    });
+
+    test('certificate failure wins over other markers in the same tail', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'failed to verify certificate\nwintun adapter is already in use',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.certificateInvalid,
+      );
+    });
+
+    test('detects a busy Wintun adapter on Windows in TUN mode', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'error wintun adapter is already in use',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.wintunBusy,
+      );
+    });
+
+    test('detects access-denied on Windows in TUN mode', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'createfile failed: access is denied',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.accessDenied,
+      );
+      expect(
+        VpnService.classifyStartupFailure(
+          'failed with code 0x5',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.accessDenied,
+      );
+    });
+
+    test('access-denied wins over wintun-busy (matches the old order)', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'wintun: access denied, adapter already exists',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.accessDenied,
+      );
+    });
+
+    test('SOCKS5 mode never reports TUN-specific failures', () {
+      // Same log lines that would trigger admin/adapter hints in TUN mode.
+      for (final logs in [
+        'error wintun adapter is already in use',
+        'createfile failed: access is denied',
+      ]) {
+        expect(
+          VpnService.classifyStartupFailure(
+            logs,
+            windows: true,
+            socksMode: true,
+          ),
+          StartupFailure.generic,
+        );
+      }
+      expect(
+        VpnService.classifyStartupFailure(
+          'tun_open: operation not permitted',
+          windows: false,
+          socksMode: true,
+        ),
+        StartupFailure.generic,
+      );
+    });
+
+    test('detects a lost TUN permission on macOS/Linux in TUN mode', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'tun_open failed: (1) operation not permitted',
+          windows: false,
+          socksMode: false,
+        ),
+        StartupFailure.tunPermissionLost,
+      );
+    });
+
+    test('unrelated logs are generic', () {
+      expect(
+        VpnService.classifyStartupFailure(
+          'failed to ping location',
+          windows: true,
+          socksMode: false,
+        ),
+        StartupFailure.generic,
+      );
+      expect(
+        VpnService.classifyStartupFailure(
+          'failed to ping location',
+          windows: false,
+          socksMode: false,
+        ),
+        StartupFailure.generic,
+      );
+    });
+  });
+
   group('isConnectedMarker', () {
     test('detects VPN_SS_CONNECTED anywhere in the line', () {
       expect(

@@ -1,7 +1,7 @@
 name: trusty
 description: "Cross-platform GUI client for TrustTunnel VPN"
 publish_to: "none"
-version: 0.3.4+5
+version: 1.0.0+7
 homepage: https://github.com/Meddelin/trusty
 repository: https://github.com/Meddelin/trusty
 issue_tracker: https://github.com/Meddelin/trusty/issues
@@ -39,6 +39,9 @@ dependencies:
 
   # SSH client for remote server setup
   dartssh2: ^2.9.0
+
+  # Native open-file dialog (custom routing lists from a local file)
+  file_selector: ^1.0.3
   package_info_plus: ^10.2.1
 
   # FFI for Win32 GetShortPathNameW (ASCII paths so a Cyrillic install dir
@@ -56,3 +59,34 @@ flutter:
 
   assets:
     - assets/
+
+  # Bundled rather than fetched at runtime: a VPN client has to render before it
+  # has a network. Static instances cut from the Google Fonts variable sources
+  # (OFL licences ship alongside them in assets/fonts/).
+  fonts:
+    # UI face.
+    - family: Geologica
+      fonts:
+        - asset: assets/fonts/Geologica-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Geologica-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Geologica-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Geologica-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Geologica-Bold.ttf
+          weight: 700
+    # Values the user reads as data: hosts, addresses, ports, counts, logs.
+    - family: ChivoMono
+      fonts:
+        - asset: assets/fonts/ChivoMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/ChivoMono-Medium.ttf
+          weight: 500
+    # Chivo Mono is Latin-only; this carries Cyrillic at the same advance width,
+    # so a routing list holding кино.рф never reflows a column.
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400

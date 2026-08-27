@@ -33,6 +33,22 @@ https://git.zx2c4.com/wintun/
 
 ================================================================================
 
+BUNDLED TYPEFACES
+
+The application embeds three typefaces, each licensed under the SIL Open Font
+License 1.1. The full licence text for each ships in assets/fonts/.
+
+Geologica — Copyright (c) The Geologica Project Authors
+Chivo Mono — Copyright (c) The Chivo Project Authors
+JetBrains Mono — Copyright (c) The JetBrains Mono Project Authors
+
+The bundled files are static instances cut from the variable sources published
+at https://github.com/google/fonts using fontTools; no glyph outlines were
+modified. The SIL Open Font License is available at:
+https://scripts.sil.org/OFL
+
+================================================================================
+
 This product is licensed under the Apache License, Version 2.0.
 You may obtain a copy of the License at:
 http://www.apache.org/licenses/LICENSE-2.0
