@@ -2,6 +2,8 @@
   <img src="assets/icon.png" alt="Trusty" width="200">
 </p>
 
+# App is no longer supported cause of Anthropic actions against VPN-users.
+
 # Trusty — VPN Client
 
 [![Windows](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
